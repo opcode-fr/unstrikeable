@@ -1,20 +1,29 @@
-"""poll: the heart of the runtime. Lease of the current task, then at most one new event.
+"""poll: the heart of the runtime. Kill switch and quotas, lease of the current task, then at most one event.
 
-Pure orchestration: boards are injected, state is a dict the caller persists, time is a parameter.
+Pure orchestration: boards and the usage meter are injected, state is a dict the caller persists,
+time is a parameter.
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import time
 from pathlib import Path
+from typing import Callable
 
 from .backends.base import Board
-from .config import Company, Department
+from .config import DEFAULT_MEMORY, Company, Department
 from .events import Event, events_for
+from .memory import curation_due, inbox, read_memory
 from .model import AGENT_MARK, BLOCKING, Item
 from .status import hhmm, lease_step, parse_status
 
 MAX_BODY = 3000
 SHIPPED = Path(__file__).parent          # playbooks/ shipped with the runtime
+MEMORY_REF = "memory"
+USAGE_TTL = 15 * 60                      # the usage meter is read at most every 15 min
+
+Meter = Callable[[int], "float | None"]  # days -> estimated cost (USD) over that window, None = unknown
 
 
 def _read(path: Path) -> str:
@@ -30,9 +39,9 @@ def _my_status(item: Item, agent: str) -> dict | None:
     return None
 
 
-def render(co: Company, dept: Department, ev: Event | None, item: Item, agent: str,
-           trigger: str, note: str = "") -> str:
-    it = item
+# ---------------------------------------------------------------- rendering
+def _context(co: Company, agent: str) -> list[str]:
+    """What every event carries: culture, the agent's sheet, shared memory, the agent's own notes."""
     lines = []
     culture = _read(co.root / "culture.md")
     if culture:
@@ -40,6 +49,26 @@ def render(co: Company, dept: Department, ev: Event | None, item: Item, agent: s
     sheet = _read(co.root / "agents" / ("%s.md" % agent))
     if sheet:
         lines += ["## You", sheet, ""]
+    shared, private, warnings = read_memory(co.root, agent, {**DEFAULT_MEMORY, **co.memory})
+    if shared:
+        lines += ["## Shared memory (human-approved team knowledge)", shared, ""]
+    if private:
+        lines += ["## Your notes (memory/agents/%s)" % agent, private, ""]
+    lines += warnings
+    return lines
+
+
+def _footer(ref: str, agent: str) -> list[str]:
+    return ["", "Learned something reusable? `uns remember --agent %s --title \"…\" --body-file <md>` "
+                "(add `--share` to propose it to the team). Never a secret." % agent,
+            "Start with `uns status %s --agent %s --state working --todo \"…\"`, "
+            "and ALWAYS finish with `--state done` (or `blocked`)." % (ref, agent)]
+
+
+def render(co: Company, dept: Department, ev: Event | None, item: Item, agent: str,
+           trigger: str, note: str = "") -> str:
+    it = item
+    lines = _context(co, agent)
     role = ev.role if ev else trigger.split(".")[0]
     pkey = trigger if "." in trigger else "%s.%s" % (role, trigger)
     playbook = dept.flow.playbooks.get(pkey)
@@ -64,9 +93,19 @@ def render(co: Company, dept: Department, ev: Event | None, item: Item, agent: s
     text = (_read(co.root / playbook) or _read(SHIPPED / playbook)) if playbook else ""
     if text:
         lines += ["", "## Playbook (%s)" % pkey, text]
-    lines += ["", "Start with `uns status %s --agent %s --state working --todo \"…\"`, "
-                  "and ALWAYS finish with `--state done` (or `blocked`)." % (it.ref, agent)]
-    return "\n".join(lines)
+    return "\n".join(lines + _footer(it.ref, agent))
+
+
+def render_curation(co: Company, agent: str, files: list[str], note: str = "") -> str:
+    lines = _context(co, agent)
+    lines += ["## Event", "[uns] agent=%s event=curator.curate item=%s" % (agent, MEMORY_REF),
+              "config repo: %s" % co.root, "inbox entries to process:"]
+    lines += ["  - %s" % f for f in files]
+    if note:
+        lines += ["", note]
+    text = _read(co.root / "playbooks" / "memory" / "curate.md") or _read(SHIPPED / "playbooks/memory/curate.md")
+    lines += ["", "## Playbook (curator.curate)", text]
+    return "\n".join(lines + _footer(MEMORY_REF, agent))
 
 
 def _flag(board: Board, ref: str, agent: str, label: str, why: str) -> None:
@@ -74,15 +113,35 @@ def _flag(board: Board, ref: str, agent: str, label: str, why: str) -> None:
     board.comment(ref, "⚠️ %s\n\n%s" % (why, AGENT_MARK % agent))
 
 
+def _alert(work: dict, now: int, ref: str, msg: str) -> None:
+    work["alerts"] = (work.get("alerts") or [])[-199:] + [{"ts": now, "ref": ref, "msg": msg}]
+
+
+# ---------------------------------------------------------------- quotas
+def check_quota(work: dict, limits: dict, meter: Meter | None, now: int) -> str | None:
+    """Reason to stop the agent (cost quota reached), or None. The meter is cached for USAGE_TTL."""
+    day_cap, month_cap = limits.get("max_cost_per_day"), limits.get("max_cost_per_month")
+    if meter is None or (day_cap is None and month_cap is None):
+        return None
+    u = work.get("usage") or {}
+    if now - u.get("ts", 0) > USAGE_TTL:
+        u = {"ts": now, "day": meter(1), "month": meter(30)}
+        work["usage"] = u
+    if day_cap is not None and u.get("day") is not None and u["day"] >= day_cap:
+        return "daily cost quota reached ($%.2f / $%.2f)" % (u["day"], day_cap)
+    if month_cap is not None and u.get("month") is not None and u["month"] >= month_cap:
+        return "30-day cost quota reached ($%.2f / $%.2f)" % (u["month"], month_cap)
+    return None
+
+
+# ---------------------------------------------------------------- poll
 def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: int | None = None,
-         dry_run: bool = False) -> str:
+         dry_run: bool = False, meter: Meter | None = None) -> str:
     """Return the text to deliver to the agent ('' = nothing). Mutates `state` unless dry_run."""
     now = int(time.time()) if now is None else now
-    work = state if not dry_run else _copy(state)
-    work.setdefault("seen", [])
-    work.setdefault("runs", {})
-    work.setdefault("reviews", {})
-    work.setdefault("current", None)
+    work = state if not dry_run else copy.deepcopy(state)
+    for k, v in (("seen", []), ("runs", {}), ("reviews", {}), ("current", None), ("memory_pending", [])):
+        work.setdefault(k, v)
     today = time.strftime("%Y-%m-%d", time.localtime(now))
     if work.get("day") != today:
         work["day"], work["day_count"] = today, 0
@@ -90,39 +149,37 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
     seen = set(work["seen"])
     depts = {d.name: d for d in co.departments_of(agent)}
 
+    # 0. kill switch and quotas: a paused agent receives nothing until a human resumes it
+    if work.get("paused"):
+        return _finish(state, work, seen, "", dry_run)
+    reason = check_quota(work, limits, meter, now)
+    if reason:
+        work["paused"] = {"ts": now, "reason": reason, "by": "quota"}
+        _alert(work, now, "-", "%s paused: %s. `uns resume --agent %s` to restart." % (agent, reason, agent))
+        return _finish(state, work, seen, "", dry_run)
+
     # 1. lease of the current task
     cur = work["current"]
     if cur:
-        dept = depts.get(cur["department"])
-        board = boards.get(cur["department"])
-        it = board.item(cur["ref"]) if board else None
-        gone = dept is None or it is None or bool(BLOCKING & set(it.labels))
-        step = lease_step(cur, _my_status(it, agent) if it else None, now, limits, gone)
-        if step == "done":
-            work["current"] = cur = None
-        elif step == "wait":
-            return _finish(state, work, seen, "", dry_run)
-        elif step in ("retry", "resume"):
-            assert dept is not None and it is not None            # not gone
-            cur["retries"] += 1
-            cur["delivered"] = now
-            note = ("RETRY: you did not start this task (no `working` status). Pick it up now."
-                    if step == "retry" else
-                    "RESUME: no sign of life for %d min, you were probably interrupted. "
-                    "Resume from the current state (branch, comments, your status)." % limits["stale_min"])
-            return _finish(state, work, seen, render(co, dept, None, it, agent, cur["trigger"], note), dry_run)
-        else:                                                  # escalate
-            why = ("%s stopped answering on this item (`%s` sent at %s, nudged once, no activity). "
-                   "`agent:lost` set: check the agent, then remove the label to resume." % (
-                       agent, cur["trigger"], hhmm(cur["delivered0"])))
-            if not dry_run and board:
-                _flag(board, cur["ref"], agent, "agent:lost", why)
-            seen.discard(cur["key"])                           # re-delivered once a human removes the label
-            work["current"] = None
-            work["alerts"] = (work.get("alerts") or [])[-199:] + [{"ts": now, "ref": cur["ref"], "msg": why}]
-            return _finish(state, work, seen, "", dry_run)
+        out = _lease(agent, co, boards, depts, work, seen, cur, now, dry_run)
+        if out is not None:
+            return _finish(state, work, seen, out, dry_run)
 
-    # 2. free: pick the next event, one at a time
+    # 2. memory curation (curator only), before new board work: it is periodic and cheap
+    still = set(inbox(co.root))
+    work["memory_pending"] = [f for f in work["memory_pending"] if f in still]     # merged PRs drop out
+    mcfg = {**DEFAULT_MEMORY, **co.memory}
+    if mcfg.get("curator") == agent:
+        due = curation_due(co.root, work["memory_pending"], mcfg["inbox_max"], mcfg["max_age_h"], now)
+        if due:
+            key = "memory|" + hashlib.sha1("\n".join(due).encode()).hexdigest()[:12]
+            work["memory_pending"] += due
+            work["memory_status"] = None
+            work["current"] = {"key": key, "ref": MEMORY_REF, "department": None, "trigger": "curator.curate",
+                               "files": due, "delivered0": now, "delivered": now, "retries": 0}
+            return _finish(state, work, seen, render_curation(co, agent, due), dry_run)
+
+    # 3. free: pick the next board event, one at a time
     for dept in depts.values():
         if work["day_count"] >= limits["max_events_per_day"]:
             break
@@ -152,6 +209,50 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
     return _finish(state, work, seen, "", dry_run)
 
 
+def _lease(agent: str, co: Company, boards: dict[str, Board], depts: dict[str, Department], work: dict,
+           seen: set, cur: dict, now: int, dry_run: bool) -> str | None:
+    """Handle the current task. Returns the text to deliver ('' = wait/nothing), or None if the agent is free."""
+    limits = co.limits
+    memory_task = cur["ref"] == MEMORY_REF
+    dept = board = it = None
+    if memory_task:
+        st, gone = work.get("memory_status"), False
+    else:
+        dept = depts.get(cur["department"])
+        board = boards.get(cur["department"])
+        it = board.item(cur["ref"]) if board else None
+        gone = dept is None or it is None or bool(BLOCKING & set(it.labels))
+        st = _my_status(it, agent) if it else None
+    step = lease_step(cur, st, now, limits, gone)
+    if step == "done":
+        work["current"] = None
+        return None
+    if step == "wait":
+        return ""
+    if step in ("retry", "resume"):
+        cur["retries"] += 1
+        cur["delivered"] = now
+        note = ("RETRY: you did not start this task (no `working` status). Pick it up now."
+                if step == "retry" else
+                "RESUME: no sign of life for %d min, you were probably interrupted. "
+                "Resume from the current state (branch, comments, your status)." % limits["stale_min"])
+        if memory_task:
+            return render_curation(co, agent, cur.get("files") or [], note)
+        assert dept is not None and it is not None            # not gone
+        return render(co, dept, None, it, agent, cur["trigger"], note)
+    why = ("%s stopped answering on %s (`%s` sent at %s, nudged once, no activity)." % (
+        agent, cur["ref"], cur["trigger"], hhmm(cur["delivered0"])))
+    if memory_task:
+        work["memory_pending"] = [f for f in work["memory_pending"] if f not in set(cur.get("files") or [])]
+    elif not dry_run and board:
+        _flag(board, cur["ref"], agent, "agent:lost",
+              why + " `agent:lost` set: check the agent, then remove the label to resume.")
+    seen.discard(cur["key"])                                   # re-delivered once a human removes the label
+    work["current"] = None
+    _alert(work, now, cur["ref"], why)
+    return ""
+
+
 def _flag_ambiguous(agent: str, dept: Department, board: Board, items: list[Item]) -> None:
     """Two named assignees for one role: the involved agents flag it for a human."""
     for it in items:
@@ -164,11 +265,6 @@ def _flag_ambiguous(agent: str, dept: Department, board: Board, items: list[Item
                       "Several agents assigned as %s (%s): keep one, then remove `needs:human`." % (
                           role.name, ", ".join(named)))
                 break
-
-
-def _copy(state: dict) -> dict:
-    import copy
-    return copy.deepcopy(state)
 
 
 def _finish(state: dict, work: dict, seen: set, out: str, dry_run: bool) -> str:

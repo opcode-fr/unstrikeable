@@ -125,3 +125,47 @@ def test_config_repo_playbook_wins_over_shipped_one(tmp_path):
     p.parent.mkdir(parents=True)
     p.write_text("Our own way of writing.")
     assert "Our own way of writing." in run(company(tmp_path), FakeBoard([item(1)]), {})
+
+
+# ---------------------------------------------------------------- memory
+from unstrikeable.memory import write_entry  # noqa: E402
+
+
+def mem_company(tmp_path, curator="kevin", inbox_max=2):
+    co = company(tmp_path)
+    return type(co)(co.root, co.departments, co.agents, co.limits, co.forge, co.runtime,
+                    {"curator": curator, "inbox_max": inbox_max, "max_age_h": 24})
+
+
+def test_agent_receives_shared_memory_and_its_own_notes(tmp_path):
+    (tmp_path / "memory" / "shared").mkdir(parents=True)
+    (tmp_path / "memory" / "shared" / "x.md").write_text("X posts: 280 chars")
+    write_entry(tmp_path, "kevin", "hooks", "Two-line hooks work", share=False, now=T0)
+    out = run(mem_company(tmp_path), FakeBoard([item(1)]), {})
+    assert "X posts: 280 chars" in out and "Two-line hooks work" in out
+    assert "uns remember" in out
+
+
+def test_curator_gets_a_curation_task_when_the_inbox_is_full(tmp_path):
+    for i in range(2):
+        write_entry(tmp_path, "brandon", "n%d" % i, "x", share=True, now=T0)
+    state = {}
+    out = run(mem_company(tmp_path), FakeBoard([]), state, now=T0 + 60)
+    assert "curator.curate" in out and "memory/inbox/brandon/" in out
+    assert state["current"]["ref"] == "memory"
+
+
+def test_non_curator_never_curates(tmp_path):
+    for i in range(2):
+        write_entry(tmp_path, "brandon", "n%d" % i, "x", share=True, now=T0)
+    assert run(mem_company(tmp_path, curator="brandon"), FakeBoard([]), {}, now=T0 + 60) == ""
+
+
+def test_handed_over_entries_are_not_curated_twice(tmp_path):
+    for i in range(2):
+        write_entry(tmp_path, "brandon", "n%d" % i, "x", share=True, now=T0)
+    co, state = mem_company(tmp_path), {}
+    run(co, FakeBoard([]), state, now=T0 + 60)
+    state["memory_status"] = {"state": "done", "since": T0, "beat": T0 + 120}
+    assert run(co, FakeBoard([]), state, now=T0 + 180) == ""
+    assert state["current"] is None

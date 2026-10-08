@@ -19,6 +19,14 @@ TRIGGERS = frozenset({
     "ci_failed",       # CI red on the linked PR
 })
 
+DEFAULT_MEMORY = {
+    "curator": None,          # agent that consolidates memory/inbox into memory/shared (via a PR)
+    "inbox_max": 10,          # curate once the inbox holds this many new entries…
+    "max_age_h": 24,          # …or once the oldest one is this old
+    "shared_max_words": 3000,
+    "private_max_words": 1500,
+}
+
 DEFAULT_LIMITS = {
     "poll_min": 3,
     "max_events_per_day": 20,
@@ -115,6 +123,7 @@ class Company:
     limits: dict[str, Any]
     forge: dict[str, Any] | None = None
     runtime: str = ""                                # version pin of the runtime
+    memory: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_MEMORY))
 
     def departments_of(self, agent: str) -> list[Department]:
         return [d for d in self.departments.values() if agent in d.staff]
@@ -197,4 +206,4 @@ def load_company(root: Path | str) -> Company:
                     raise ConfigError("%s: %s has role %r, not in flow %s" % (name, a, r, flow.name))
         depts[name] = Department(name, flow, dict(d.get("board") or {}), list(d.get("repos") or []), staff)
     return Company(root, depts, agents, {**DEFAULT_LIMITS, **(raw.get("limits") or {})}, raw.get("forge"),
-                   str(raw.get("runtime") or ""))
+                   str(raw.get("runtime") or ""), {**DEFAULT_MEMORY, **(raw.get("memory") or {})})
