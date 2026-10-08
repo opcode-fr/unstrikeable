@@ -32,7 +32,8 @@ Secrets and local paths live in `local.yml` on each instance (chmod 600, never v
 
 ```
 unstrikeable.yml          # pinned runtime, backends, boards, agents, limits
-agents/<agent>.md         # role, tone, agent-specific instructions
+culture.md                # vision, values, mindset of the company (read by every agent)
+agents/<agent>.md         # role, tone, capabilities, agent-specific instructions
 skills/                   # team skills (same name as a runtime skill = replaces it)
 memory/
   shared/*.md             # curated, human-approved, read by every agent
@@ -59,6 +60,44 @@ limits: {poll_min: 5, max_events_per_day: 10}
 ```
 
 A config may declare several boards (e.g. `product` on the `dev` flow and `marketing` on the `content` flow).
+
+### `culture.md`: the company mindset
+
+Free-form Markdown, written by humans: why the company exists, what it values, how it works.
+
+```markdown
+# Culture
+- Frugal: managed and on-demand services first; no spend without a reason.
+- Facts over opinions: nothing is "done" or "faster" without a test, a log or a number.
+- Small steps: one subject per PR, the minimal change that solves it.
+- Say no early: a bad idea gets flagged with a reason and an alternative.
+```
+
+- Injected into **every** event delivered to **every** agent, so it must stay short (cap: ~1 page; `uns check` warns above).
+- It shapes judgement, it does not grant rights: the runtime rules (§6) and the flow always win over it.
+
+### `agents/<agent>.md`: identity and capabilities
+
+```markdown
+---
+roles: [dev]
+capabilities:
+  - I have an AWS account to run SageMaker GPU jobs.
+  - I run on a Mac with Apple Silicon (MLX).
+  - I can write and publish posts on X.
+---
+Gerard is a senior ML engineer. Terse, measures before claiming.
+```
+
+- `capabilities` are **plain sentences**, no taxonomy. The planner reads them to suggest who should take an item
+  ("needs a GPU run → Gerard has SageMaker"); the agent reads its own to know what it can do.
+- A capability is a **claim, not a permission**: the credentials behind it live in that instance's `local.yml`,
+  and humans still assign. Declaring "I can publish on X" without the token simply fails at run time.
+
+### What an agent receives with each event
+
+`culture.md` → `agents/<self>.md` → `memory/shared/` → flow playbook for (role, trigger) → the event itself.
+Runtime guardrails come last and cannot be overridden by anything above them.
 
 ## 3. Flow (YAML profile)
 
@@ -189,4 +228,4 @@ The only exception to "no agent pushes to a default branch": its own `memory/inb
 
 - Content flow conversations (replies to comments): one file per conversation, one section per exchange,
   one item per reply to write — to confirm with real use.
-- A dedicated `unstrikeable` GitHub org, to be created before someone takes the name (the repo can be transferred without loss).
+- Dedicated `unstrikeable` GitHub org: later, not urgent (the repo can be transferred without loss).
