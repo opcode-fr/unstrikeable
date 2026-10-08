@@ -183,3 +183,10 @@ def test_limits_have_defaults(tmp_path):
 def test_limits_can_be_overridden(tmp_path):
     write(tmp_path, "config.yml", MINIMAL + "    limits:\n      max_events_per_day: 10\n")
     assert load_company(tmp_path).limits["max_events_per_day"] == 10
+
+
+def test_every_shipped_playbook_exists():
+    from unstrikeable.poll import SHIPPED
+    for name in ("dev", "content"):
+        for key, path in load_flow(name).playbooks.items():
+            assert (SHIPPED / path).exists(), (name, key, path)

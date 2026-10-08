@@ -113,3 +113,15 @@ def test_human_comment_is_quoted_in_the_event(tmp_path):
     c = Comment(7, "brice", True, body="Shorter please")
     board = FakeBoard([item(1, "doing", comments=[c])])
     assert "Shorter please" in run(company(tmp_path), board, {})
+
+
+def test_shipped_playbook_is_inlined(tmp_path):
+    out = run(company(tmp_path), FakeBoard([item(1)]), {})
+    assert "## Playbook (writer.assigned)" in out
+
+
+def test_config_repo_playbook_wins_over_shipped_one(tmp_path):
+    p = tmp_path / "playbooks" / "content" / "write.md"
+    p.parent.mkdir(parents=True)
+    p.write_text("Our own way of writing.")
+    assert "Our own way of writing." in run(company(tmp_path), FakeBoard([item(1)]), {})
