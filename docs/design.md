@@ -127,8 +127,8 @@ states:                       # order = column order; logical key -> column name
   - {key: done,     column: Published}
 roles:
   planner:  {on: {backlog: [item_new, human_comment], ready: [human_comment]}}
-  writer:   {label: "writer:",   on: {ready: [assigned], doing: [human_comment], approved: [pr_conflict, human_comment]}}
-  reviewer: {label: "reviewer:", human: true}
+  writer:   {label: "writer:{agent}",   on: {ready: [assigned], doing: [human_comment], approved: [pr_conflict, human_comment]}}
+  reviewer: {label: "reviewer:{agent}", human: true}
 playbooks:                    # instructions handed to the agent, per (role, trigger)
   writer.assigned: playbooks/content/write.md
 artifact: {path: "{yyyy}/{mm}/{channel}-{dd}-{slug}.md"}
@@ -136,7 +136,15 @@ artifact: {path: "{yyyy}/{mm}/{channel}-{dd}-{slug}.md"}
 
 - Agents and the CLI speak **logical keys** (`uns move <ref> review`), never column names.
 - A `human: true` role has no agent: the runtime only watches and waits for the human.
-- `label` sets the assignment prefix of a role. System labels (`needs:human`, `agent:pause`, `agent:lost`,
+- `label` is the assignment label of a role, a template:
+  - **with `{agent}`** (`writer:{agent}`): named assignment, one label per staff member (`writer:kevin`).
+  - **without** (`to-write`): pool assignment, any idle staff member holding that role may take the item.
+  The pool is resolved **deterministically** (first idle staff member, in `staff` order): every poller computes
+  the same answer from the same board, with no coordination. On take, the runtime swaps the pool label for the
+  named one (`to-write` → `writer:kevin`) so the board shows who works on what. If two agents still end up on
+  the same item (race between polls), the existing rule applies: two named labels → `needs:human`.
+  A flow may declare both forms for the same role (`label: ["writer:{agent}", "to-write"]`).
+- System labels (`needs:human`, `agent:pause`, `agent:lost`,
   `spec:question`) are fixed and shared by every flow.
 
 ## 4. Triggers (closed set, coded and tested)
@@ -145,7 +153,7 @@ artifact: {path: "{yyyy}/{mm}/{channel}-{dd}-{slug}.md"}
 |---|---|
 | `item_new` | item is in the state and has never been handled by this role |
 | `human_comment` | a new comment from a human member since the agent's last pass |
-| `assigned` | the role label is set, state is `ready`, item not blocked, agent idle |
+| `assigned` | a label of the role is set (named for this agent, or pool and this agent is first idle), state is `ready`, item not blocked |
 | `pr_updated` | the head commit of the linked PR changed |
 | `pr_conflict` | the linked PR is not mergeable |
 | `ci_failed` | CI is red on the linked PR |
