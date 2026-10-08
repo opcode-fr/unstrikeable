@@ -111,8 +111,11 @@ def events_for(agent: str, dept: Department, items: list[Item]) -> list[Event]:
                 continue
             if owner(role, dept, it, items) != agent:
                 continue
-            if not role.labelled and not it.author_trusted and not _assignees(dept, it, rname):
-                continue                                  # outsider item, not vetted by a member
+            if not role.labelled and not _assignees(dept, it, rname):
+                if not it.author_trusted:
+                    continue                              # outsider item, not vetted by a member
+                if it.author_agent and not any(c.trusted and c.agent is None and not c.status for c in it.comments):
+                    continue                              # created by an agent: waits for a human signal
 
             def ev(trigger, disc, comment=None, it=it, rname=rname):
                 key = "%s|%s|%s|%s|%s" % (dept.name, it.ref, rname, trigger, disc)

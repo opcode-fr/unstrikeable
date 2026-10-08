@@ -36,6 +36,7 @@ class Item:
     labels: list[str] = field(default_factory=list)
     url: str = ""
     author_trusted: bool = True
+    author_agent: str | None = None   # set when one of our agents created the item
     blocked_by: int = 0
     comments: list[Comment] = field(default_factory=list)
     prs: list[PR] = field(default_factory=list)

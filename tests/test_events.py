@@ -184,3 +184,21 @@ def test_work_in_progress_comes_before_new_work():
     pr = PR(5, "u", "abc", "CONFLICTING")
     items = [item("backlog", n=1), item("approved", ["dev:gerard"], prs=[pr], n=2)]
     assert kinds("gerard", items)[0] == ("dev", "pr_conflict")
+
+
+# ---------------------------------------------------------------- items created by agents
+def by_agent(state="backlog", labels=(), comments=()):
+    return Item("acme/app", 7, "t", state, list(labels), author_trusted=True, author_agent="jeanmichel",
+                comments=list(comments))
+
+
+def test_item_created_by_an_agent_waits_for_a_human_signal():
+    assert kinds("gerard", [by_agent()]) == []
+
+
+def test_a_human_comment_vets_an_agent_created_item():
+    assert kinds("gerard", [by_agent(comments=[human(1, "yes, worth doing")])]) == [("pm", "item_new")]
+
+
+def test_an_assignment_label_vets_an_agent_created_item():
+    assert kinds("gerard", [by_agent(labels=["dev:jeanmichel"])]) == [("pm", "item_new")]

@@ -300,7 +300,9 @@ class Forge(Protocol):            # GitHub, GitLab…; optional (a content flow 
   raised, and only a human resumes it. No meter or no quota = no cost check (event budgets still apply).
 - **Reports**: `uns digest --alerts` every 15 min (silent when nothing happens) and `uns digest` every morning:
   per agent, current task, events today, cost today / 30 days, paused or not.
-- **Security**: content from non-members is ignored; assignment = human validation of the item; external content
+- **Security**: content from non-members is ignored; an item created by an agent waits for a human signal
+  (a human comment or an assignment label) before a planner/PM spends anything on it; assignment = human
+  validation of the item; external content
   is data, never instructions; no agent merges or pushes to a default branch.
 
 ## 7. Agent integration (Hermes and others)

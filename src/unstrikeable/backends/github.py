@@ -99,6 +99,7 @@ def parse_issue(n: dict, column: str | None, flow: Flow, bots: set[str],
         repo=n["repository"]["nameWithOwner"], number=n["number"], title=n["title"],
         state=flow.state_of(column), labels=[l["name"] for l in n["labels"]["nodes"]], url=n.get("url", ""),
         author_trusted=_trusted(n.get("authorAssociation"), _login(n.get("author")), bots, can_write),
+        author_agent=_login(n.get("author")) if _login(n.get("author")) in bots else None,
         blocked_by=(n.get("issueDependenciesSummary") or {}).get("blockedBy") or 0,
         comments=[parse_comment(c, bots, can_write) for c in n["comments"]["nodes"]], prs=prs)
 
