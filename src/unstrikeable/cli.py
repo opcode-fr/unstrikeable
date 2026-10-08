@@ -292,7 +292,10 @@ def cmd_remember(a: argparse.Namespace) -> None:
     except ValueError as e:
         raise UsageError(str(e)) from e
     if (co.root / ".git").exists():
-        commit_and_push(co.root, [path], "memory(%s): %s" % (a.agent, a.title))
+        owner = next((d.board.get("owner") for d in co.departments_of(a.agent)), "")
+        token = agent_token(a.agent, owner) if owner else None
+        env = {**os.environ, "GH_TOKEN": token} if token else None     # push as the agent's App
+        commit_and_push(co.root, [path], "memory(%s): %s" % (a.agent, a.title), env=env)
     print("%s %s" % ("proposed to the team" if a.share else "noted", path.relative_to(co.root)))
 
 

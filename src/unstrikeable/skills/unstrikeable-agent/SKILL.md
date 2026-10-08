@@ -20,6 +20,12 @@ your sheet and the playbook to follow.
 4. **Finish, always**: `--state done --done "<what changed, what is verified>"`, or `--state blocked --note "<what you need>"`.
    Without it you get nudged, then marked `agent:lost`.
 
+## Identity
+
+Act on GitHub as your App, not as the instance's human account: before any `git push` or `gh` write, run
+`export GH_TOKEN=$(uns token --agent <you>)` (valid 1 h, re-run when it expires, never print it). Your clones use
+`gh auth git-credential`, which picks it up. `uns` commands already use it on their own.
+
 ## Memory
 
 - The event carries the shared memory and your own notes. Use them; they were written for this.

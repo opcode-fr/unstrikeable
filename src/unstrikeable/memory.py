@@ -79,8 +79,8 @@ def curation_due(root: Path, pending: list[str], inbox_max: int, max_age_h: floa
     return None
 
 
-def _git(root: Path, *args: str) -> str:
-    p = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
+def _git(root: Path, *args: str, env: dict | None = None) -> str:
+    p = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, env=env)
     if p.returncode != 0:
         raise RuntimeError("git %s: %s" % (" ".join(args[:2]), (p.stderr or p.stdout).strip()[:400]))
     return p.stdout
@@ -95,7 +95,7 @@ def pull(root: Path) -> None:
             pass
 
 
-def commit_and_push(root: Path, paths: list[Path], message: str, retries: int = 2) -> None:
+def commit_and_push(root: Path, paths: list[Path], message: str, retries: int = 2, env: dict | None = None) -> None:
     """Commit memory files straight to the default branch. Unique file names: a rebase never conflicts."""
     root = Path(root).resolve()
     rels = []
@@ -108,8 +108,8 @@ def commit_and_push(root: Path, paths: list[Path], message: str, retries: int = 
     _git(root, "commit", "-q", "-m", message, "--", *rels)
     for attempt in range(retries + 1):
         try:
-            _git(root, "pull", "-q", "--rebase", "--autostash")
-            _git(root, "push", "-q")
+            _git(root, "pull", "-q", "--rebase", "--autostash", env=env)
+            _git(root, "push", "-q", env=env)
             return
         except RuntimeError:
             if attempt == retries:
