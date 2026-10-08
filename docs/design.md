@@ -218,12 +218,14 @@ artifact:
 | Trigger | Fires when |
 |---|---|
 | `item_new` | item is in the state and has never been handled by this role |
-| `human_comment` | a new comment from a human member since the agent's last pass |
+| `human_comment` | a human member spoke last, after the agent's last comment |
+| `new_comment` | anyone trusted (human or another agent, e.g. a reviewer) spoke last, after the agent |
 | `assigned` | a label of the role is set (named for this agent, or pool and this agent is first idle), state is `ready`, item not blocked |
 | `pr_updated` | the head commit of the linked PR changed |
 | `pr_conflict` | the linked PR is not mergeable |
 | `ci_failed` | CI is red on the linked PR |
-| `unblocked` | all dependencies are closed |
+
+A blocked item simply never fires `assigned`; it does once its dependencies are closed.
 
 Adding a trigger = code + tests in the runtime, never in a config.
 Delivery priority: work in progress (`pr_conflict`, `ci_failed`, `human_comment` in `doing`) > review > spec > new work.
