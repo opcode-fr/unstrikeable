@@ -169,3 +169,42 @@ def test_handed_over_entries_are_not_curated_twice(tmp_path):
     state["memory_status"] = {"state": "done", "since": T0, "beat": T0 + 120}
     assert run(co, FakeBoard([]), state, now=T0 + 180) == ""
     assert state["current"] is None
+
+
+# ---------------------------------------------------------------- kill switch and quotas
+def test_paused_agent_receives_nothing(tmp_path):
+    state = {"paused": {"ts": T0, "reason": "manual", "by": "brice"}}
+    assert run(company(tmp_path), FakeBoard([item(1)]), state) == ""
+
+
+def test_daily_cost_quota_pauses_the_agent_and_alerts(tmp_path):
+    co, state = company(tmp_path, limits={"max_cost_per_day": 5}), {}
+    out = poll("kevin", co, {"marketing": FakeBoard([item(1)])}, state, T0, meter=lambda days: 7.5)
+    assert out == ""
+    assert state["paused"]["by"] == "quota" and "daily cost quota" in state["paused"]["reason"]
+    assert "uns resume --agent kevin" in state["alerts"][-1]["msg"]
+
+
+def test_under_quota_works_normally(tmp_path):
+    co, state = company(tmp_path, limits={"max_cost_per_day": 5, "max_cost_per_month": 100}), {}
+    assert "writer.assigned" in poll("kevin", co, {"marketing": FakeBoard([item(1)])}, state, T0,
+                                     meter=lambda days: 1.0 if days == 1 else 20.0)
+
+
+def test_meter_is_read_at_most_every_15_minutes(tmp_path):
+    calls = []
+    co, state = company(tmp_path, limits={"max_cost_per_day": 5}), {}
+
+    def meter(days):
+        calls.append(days)
+        return 1.0
+
+    for t in (T0, T0 + 60, T0 + 120):
+        poll("kevin", co, {"marketing": FakeBoard([])}, state, t, meter=meter)
+    assert len(calls) == 2                       # one read (day + month) for three polls
+
+
+def test_no_quota_configured_never_reads_the_meter(tmp_path):
+    def meter(days):
+        raise AssertionError("must not be called")
+    poll("kevin", company(tmp_path), {"marketing": FakeBoard([])}, {}, T0, meter=meter)
