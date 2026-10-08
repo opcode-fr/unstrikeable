@@ -17,9 +17,9 @@ Status: **draft v0**, to be approved before any runtime code is written.
 
 ## 1. Two separate things
 
-| | Runtime (this repo) | Config repo (one per team) |
+| | Runtime (this repo) | Config repo (one per company) |
 |---|---|---|
-| Contains | code, `uns` CLI, backends, foundation skills, flow profiles, docs | `unstrikeable.yml`, agents, team skills, memory |
+| Contains | code, `uns` CLI, backends, foundation skills, flow profiles, docs | `config.yml`, culture, agents, team skills, memory |
 | Versioning | `vX.Y.Z` tags | free |
 | Installed as | Python package (`uv tool install`), version pinned by the config | cloned / read through the backend API |
 | Secrets | never | never |
@@ -31,7 +31,7 @@ Secrets and local paths live in `local.yml` on each instance (chmod 600, never v
 ## 2. Config repo layout
 
 ```
-unstrikeable.yml          # pinned runtime, backends, boards, agents, limits
+config.yml                # pinned runtime, departments, agents, limits
 culture.md                # vision, values, mindset of the company (read by every agent)
 agents/<agent>.md         # role, tone, capabilities, agent-specific instructions
 skills/                   # team skills (same name as a runtime skill = replaces it)
@@ -45,22 +45,33 @@ Example:
 
 ```yaml
 runtime: ">=0.1,<0.2"
-backends:
-  board: {type: github-projects, owner: acme, number: 2}
-  forge: {type: github}
-boards:
+forge: {type: github}                     # shared by every department that needs one
+departments:
   marketing:
-    flow: content                 # profile shipped with the runtime
+    flow: content                         # profile shipped with the runtime
+    board: {type: github-projects, owner: acme, number: 2}
+    repos: [acme/marketing]
+    staff: {kevin: [planner, writer]}     # who works here, and with which roles of the flow
     overrides:
       columns: {approved: "Ready to publish"}
       labels: [channel:x, channel:linkedin, type:release]
-    repos: [acme/marketing]
-agents:
-  kevin: {instance: mac-mini, roles: [planner, writer], identity: kevin-acme}
+  rnd:
+    flow: dev
+    board: {type: github-projects, owner: acme, number: 1}
+    repos: [acme/product, acme/lab]
+    staff: {gerard: [pm, dev], didier: [review]}
+agents:                                   # identity and hosting, independent of departments
+  kevin:  {instance: mac-mini, identity: kevin-acme}
+  gerard: {instance: mac-mini, identity: gerard-acme}
+  didier: {instance: other-host, identity: didier-acme}
 limits: {poll_min: 5, max_events_per_day: 10}
 ```
 
-A config may declare several boards (e.g. `product` on the `dev` flow and `marketing` on the `content` flow).
+Vocabulary:
+- A **flow** is a template (`dev`, `content`): states, roles, triggers, playbooks.
+- A **department** is a running instance of a flow: one board, its repos, its staff.
+- **Roles are per department**: Kevin is `writer` in marketing; the same agent could be `reviewer` elsewhere.
+  `limits` apply per agent, across all its departments.
 
 ### `culture.md`: the company mindset
 
@@ -81,7 +92,6 @@ Free-form Markdown, written by humans: why the company exists, what it values, h
 
 ```markdown
 ---
-roles: [dev]
 capabilities:
   - I have an AWS account to run SageMaker GPU jobs.
   - I run on a Mac with Apple Silicon (MLX).
@@ -103,7 +113,7 @@ Runtime guardrails come last and cannot be overridden by anything above them.
 ## 3. Flow (YAML profile)
 
 A profile declares **states, roles, triggers and playbooks**. Shipped profiles (`flows/dev.yml`,
-`flows/content.yml`) are templates: a config references one and overrides it key by key
+`flows/content.yml`) are templates: each department references one and overrides it key by key
 (shallow merge, no deep merge).
 
 ```yaml
