@@ -1,0 +1,184 @@
+"""GitHub Projects (v2) board, on top of the `gh` CLI."""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+from typing import Any, Callable, Sequence
+
+from ..config import Flow
+from ..model import PR, Comment, Item
+from ..status import parse_status
+
+TRUSTED = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
+AGENT_RE = re.compile(r"<!-- uns:agent=(\S+) -->")
+CI = {"SUCCESS": "SUCCESS", "FAILURE": "FAILURE", "ERROR": "FAILURE", "PENDING": "PENDING", "EXPECTED": "PENDING"}
+
+ISSUE_FIELDS = """
+  number title url state authorAssociation
+  repository { nameWithOwner }
+  labels(first:30) { nodes { name } }
+  issueDependenciesSummary { blockedBy }
+  comments(last:30) { nodes { databaseId author { login } authorAssociation body } }
+  closedByPullRequestsReferences(first:5, includeClosedPrs:false) {
+    nodes { number url mergeable headRefOid statusCheckRollup { state } } }
+"""
+
+ITEMS_Q = """
+query($login:String!, $num:Int!, $cursor:String) {
+  %s(login:$login) { projectV2(number:$num) {
+    items(first:50, after:$cursor) { pageInfo { hasNextPage endCursor }
+      nodes { status: fieldValueByName(name:"Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+        content { __typename ... on Issue { %s } } } } } }
+}"""
+
+ISSUE_Q = """
+query($o:String!, $r:String!, $n:Int!) { repository(owner:$o, name:$r) { issue(number:$n) {
+  id %s
+  projectItems(first:20) { nodes { id
+    project { id number owner { ... on Organization { login } ... on User { login } }
+      field(name:"Status") { ... on ProjectV2SingleSelectField { id options { id name } } } }
+    status: fieldValueByName(name:"Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }"""
+
+
+class GitHubError(Exception):
+    pass
+
+
+def gh(args: list[str], stdin: str | None = None, token: str | None = None) -> str:
+    env = dict(os.environ)
+    if token:
+        env["GH_TOKEN"] = token
+    p = subprocess.run(["gh", *args], input=stdin, capture_output=True, text=True, env=env)
+    if p.returncode != 0:
+        raise GitHubError("gh %s: %s" % (" ".join(args[:2]), p.stderr.strip()[:500]))
+    return p.stdout
+
+
+def make_graphql(token: str | None = None) -> Callable[..., dict]:
+    def graphql(query: str, **variables: Any) -> dict:
+        out = json.loads(gh(["api", "graphql", "--input", "-"],
+                            stdin=json.dumps({"query": query, "variables": variables}), token=token))
+        if out.get("errors"):
+            raise GitHubError("graphql: " + json.dumps(out["errors"])[:800])
+        return out["data"]
+    return graphql
+
+
+def _login(author: dict | None) -> str:
+    return ((author or {}).get("login") or "").replace("[bot]", "").lower()
+
+
+def parse_comment(c: dict, bots: set[str]) -> Comment:
+    login = _login(c.get("author"))
+    trusted = c.get("authorAssociation") in TRUSTED or login in bots
+    body = c.get("body") or ""
+    m = AGENT_RE.search(body) if trusted else None
+    return Comment(int(c["databaseId"]), login or "?", trusted, agent=m.group(1) if m else None,
+                   status=trusted and "<!-- uns:status " in body, body=body)
+
+
+def parse_issue(n: dict, column: str | None, flow: Flow, bots: set[str]) -> Item:
+    prs = [PR(p["number"], p["url"], p["headRefOid"], p.get("mergeable") or "UNKNOWN",
+              CI.get(((p.get("statusCheckRollup") or {}).get("state")) or ""))
+           for p in (n.get("closedByPullRequestsReferences") or {}).get("nodes") or []]
+    return Item(
+        repo=n["repository"]["nameWithOwner"], number=n["number"], title=n["title"],
+        state=flow.state_of(column), labels=[l["name"] for l in n["labels"]["nodes"]], url=n.get("url", ""),
+        author_trusted=n.get("authorAssociation") in TRUSTED,
+        blocked_by=(n.get("issueDependenciesSummary") or {}).get("blockedBy") or 0,
+        comments=[parse_comment(c, bots) for c in n["comments"]["nodes"]], prs=prs)
+
+
+def split_ref(ref: str) -> tuple[str, str, int]:
+    repo, _, num = ref.partition("#")
+    if "/" not in repo or not num.isdigit():
+        raise GitHubError("bad item ref %r (expected owner/repo#123)" % ref)
+    o, r = repo.split("/", 1)
+    return o, r, int(num)
+
+
+class GitHubBoard:
+    """Board = one GitHub Project v2; items = its open issues."""
+
+    def __init__(self, board: dict, flow: Flow, bots: set[str], token: str | None = None,
+                 graphql: Callable[..., dict] | None = None, run: Callable[..., str] | None = None):
+        self.owner = board["owner"]
+        self.number = int(board["number"])
+        self.kind = board.get("owner_type", "organization")
+        self.flow, self.bots, self.token = flow, {b.lower() for b in bots}, token
+        self.graphql = graphql or make_graphql(token)
+        self.run = run or (lambda args, stdin=None: gh(args, stdin, token))
+
+    # ------------------------------------------------------------ read
+    def items(self) -> list[Item]:
+        out, cursor = [], None
+        while True:
+            d = self.graphql(ITEMS_Q % (self.kind, ISSUE_FIELDS), login=self.owner, num=self.number, cursor=cursor)
+            page = d[self.kind]["projectV2"]["items"]
+            for n in page["nodes"]:
+                c = n.get("content") or {}
+                if c.get("__typename") != "Issue" or c.get("state") != "OPEN":
+                    continue
+                out.append(parse_issue(c, (n.get("status") or {}).get("name"), self.flow, self.bots))
+            if not page["pageInfo"]["hasNextPage"]:
+                return out
+            cursor = page["pageInfo"]["endCursor"]
+
+    def _issue(self, ref: str) -> tuple[dict, dict | None]:
+        o, r, n = split_ref(ref)
+        iss = self.graphql(ISSUE_Q % ISSUE_FIELDS, o=o, r=r, n=n)["repository"]["issue"]
+        if not iss:
+            raise GitHubError("%s not found" % ref)
+        mine = next((pi for pi in iss["projectItems"]["nodes"]
+                     if pi["project"]["number"] == self.number
+                     and (pi["project"]["owner"] or {}).get("login", "").lower() == self.owner.lower()), None)
+        return iss, mine
+
+    def item(self, ref: str) -> Item | None:
+        iss, pi = self._issue(ref)
+        if iss["state"] != "OPEN":
+            return None
+        return parse_issue(iss, ((pi or {}).get("status") or {}).get("name"), self.flow, self.bots)
+
+    # ------------------------------------------------------------ write
+    def move(self, ref: str, column: str) -> None:
+        iss, pi = self._issue(ref)
+        if not pi:
+            raise GitHubError("%s is not on project %s/%d" % (ref, self.owner, self.number))
+        field = pi["project"]["field"]
+        opt = next((o for o in field["options"] if o["name"].lower() == column.lower()), None)
+        if not opt:
+            raise GitHubError("no column %r on the board (%s)" % (column, [o["name"] for o in field["options"]]))
+        self.graphql("""mutation($p:ID!, $i:ID!, $f:ID!, $o:String!) { updateProjectV2ItemFieldValue(input:{
+            projectId:$p, itemId:$i, fieldId:$f, value:{ singleSelectOptionId:$o } }) { clientMutationId } }""",
+                     p=pi["project"]["id"], i=pi["id"], f=field["id"], o=opt["id"])
+
+    def labels(self, ref: str, add: Sequence[str] = (), remove: Sequence[str] = ()) -> None:
+        o, r, n = split_ref(ref)
+        if add:
+            self.run(["api", "-X", "POST", "repos/%s/%s/issues/%d/labels" % (o, r, n), "--input", "-"],
+                     stdin=json.dumps({"labels": list(add)}))
+        for label in remove:
+            try:
+                self.run(["api", "-X", "DELETE", "repos/%s/%s/issues/%d/labels/%s" % (o, r, n, label)])
+            except GitHubError as e:
+                if "404" not in str(e) and "Not Found" not in str(e):   # already absent: fine
+                    raise
+
+    def comment(self, ref: str, body: str) -> None:
+        o, r, n = split_ref(ref)
+        self.run(["api", "-X", "POST", "repos/%s/%s/issues/%d/comments" % (o, r, n), "--input", "-"],
+                 stdin=json.dumps({"body": body}))
+
+    def upsert_status(self, ref: str, agent: str, body: str) -> None:
+        o, r, n = split_ref(ref)
+        pages = json.loads(self.run(["api", "repos/%s/%s/issues/%d/comments?per_page=100" % (o, r, n),
+                                     "--paginate", "--slurp"]))
+        mine = next((c for page in pages for c in page if parse_status(c.get("body") or "", agent)), None)
+        if mine:
+            self.run(["api", "-X", "PATCH", "repos/%s/%s/issues/comments/%d" % (o, r, mine["id"]), "--input", "-"],
+                     stdin=json.dumps({"body": body}))
+        else:
+            self.comment(ref, body)
