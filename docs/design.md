@@ -2,74 +2,73 @@
 
 > *The company that never goes on strike.*
 
-Statut : **brouillon v0**, à valider avant toute ligne de runtime.
-Successeur de `opcode-fr/hermes-gh-agents` (PoC). Repo neuf, aucune compatibilité à garantir.
+Status: **draft v0**, to be approved before any runtime code is written.
 
-## 0. But et non-buts
+## 0. Goals and non-goals
 
-**But** : faire travailler une équipe d'agents IA sur un board de tickets (dev, contenu, ou autre),
-avec un flux **déclaré en YAML**, des humains qui affectent et valident, et des garde-fous
-(une tâche à la fois, budget, battement de cœur, kill switch).
+**Goal**: let a team of AI agents work a ticket board (code, content, or anything else) through a
+**flow declared in YAML**, with humans who assign and approve, and built-in guardrails
+(one task at a time, budgets, heartbeat, kill switches).
 
-**Non-buts**
-- Un moteur de workflow générique. Le runtime a une liste **fermée** de déclencheurs ; le YAML les branche.
-- Remplacer l'humain sur les décisions : affecter, approuver, merger, publier restent humains par défaut.
-- Webhooks, temps réel, UI. On polle (instances derrière du NAT, Projects v2 n'émet pas d'Actions).
+**Non-goals**
+- A generic workflow engine. The runtime ships a **closed** set of triggers; YAML only wires them.
+- Replacing human decisions: assigning, approving, merging and publishing stay human by default.
+- Webhooks, real time, UI. We poll (instances sit behind NAT; GitHub Projects v2 does not fire Actions).
 
-## 1. Deux choses séparées
+## 1. Two separate things
 
-| | Runtime (ce repo) | Repo de config (un par équipe) |
+| | Runtime (this repo) | Config repo (one per team) |
 |---|---|---|
-| Contenu | code, CLI, backends, skills de fondation, profils de flow, doc | `unstrikeable.yml`, agents, skills maison, mémoire |
-| Versionné | tags `vX.Y.Z` | libre |
-| Installé | paquet Python (`uv tool install`) épinglé par la config | cloné / lu via l'API du backend |
-| Secrets | jamais | jamais |
+| Contains | code, `uns` CLI, backends, foundation skills, flow profiles, docs | `unstrikeable.yml`, agents, team skills, memory |
+| Versioning | `vX.Y.Z` tags | free |
+| Installed as | Python package (`uv tool install`), version pinned by the config | cloned / read through the backend API |
+| Secrets | never | never |
 
-Pas de fork : on surcharge par la config. On ne forke que pour modifier le runtime, et on contribue en amont.
+No fork: teams customise through their config repo. Fork only to change the runtime itself, then contribute upstream.
 
-Les secrets et chemins locaux vivent dans `local.yml` sur chaque instance (chmod 600, jamais versionné).
+Secrets and local paths live in `local.yml` on each instance (chmod 600, never versioned).
 
-## 2. Structure du repo de config
+## 2. Config repo layout
 
 ```
-unstrikeable.yml          # runtime épinglé, backends, boards, agents, limites
-agents/<agent>.md         # rôle, ton, consignes propres à l'agent
-skills/                   # skills maison (surchargent celles du runtime, même nom = remplace)
+unstrikeable.yml          # pinned runtime, backends, boards, agents, limits
+agents/<agent>.md         # role, tone, agent-specific instructions
+skills/                   # team skills (same name as a runtime skill = replaces it)
 memory/
-  shared/*.md             # synthèse validée, lue par tous les agents
-  inbox/<agent>/*.md      # entrées brutes, un fichier par entrée (cf. §8)
+  shared/*.md             # curated, human-approved, read by every agent
+  inbox/<agent>/*.md      # raw entries, one file per entry (see §8)
 ```
 
-Exemple :
+Example:
 
 ```yaml
 runtime: ">=0.1,<0.2"
 backends:
-  board: {type: github-projects, owner: usejul, number: 2}
+  board: {type: github-projects, owner: acme, number: 2}
   forge: {type: github}
 boards:
   marketing:
-    flow: content                 # profil livré par le runtime
+    flow: content                 # profile shipped with the runtime
     overrides:
       columns: {approved: "Ready to publish"}
       labels: [channel:x, channel:linkedin, type:release]
-    repos: [usejul/jul-marketing]
+    repos: [acme/marketing]
 agents:
-  kevin: {instance: mac-mini-brice, roles: [planner, writer], identity: kevin-usejul}
+  kevin: {instance: mac-mini, roles: [planner, writer], identity: kevin-acme}
 limits: {poll_min: 5, max_events_per_day: 10}
 ```
 
-Plusieurs boards par config autorisés (ex. `jul` en flow `dev` + `marketing` en flow `content`).
+A config may declare several boards (e.g. `product` on the `dev` flow and `marketing` on the `content` flow).
 
-## 3. Flow (profil YAML)
+## 3. Flow (YAML profile)
 
-Un profil décrit **états, rôles, déclencheurs, consignes**. Les profils livrés (`flows/dev.yml`,
-`flows/content.yml`) sont des modèles : la config en référence un et le surcharge clé par clé
-(merge à plat, pas de merge profond).
+A profile declares **states, roles, triggers and playbooks**. Shipped profiles (`flows/dev.yml`,
+`flows/content.yml`) are templates: a config references one and overrides it key by key
+(shallow merge, no deep merge).
 
 ```yaml
-# flows/content.yml (livré)
-states:                       # ordre = ordre des colonnes ; clé logique -> nom de colonne
+# flows/content.yml (shipped)
+states:                       # order = column order; logical key -> column name
   - {key: backlog,  column: Ideas}
   - {key: ready,    column: Ready to write}
   - {key: doing,    column: Drafting}
@@ -80,34 +79,34 @@ roles:
   planner:  {on: {backlog: [item_new, human_comment], ready: [human_comment]}}
   writer:   {label: "writer:",   on: {ready: [assigned], doing: [human_comment], approved: [pr_conflict, human_comment]}}
   reviewer: {label: "reviewer:", human: true}
-playbooks:                    # consigne livrée à l'agent, par (rôle, déclencheur)
+playbooks:                    # instructions handed to the agent, per (role, trigger)
   writer.assigned: playbooks/content/write.md
 artifact: {path: "{yyyy}/{mm}/{channel}-{dd}-{slug}.md"}
 ```
 
-- Les agents et la CLI parlent en **clés logiques** (`uns move <ref> review`), jamais en noms de colonnes.
-- Un rôle `human: true` n'a pas d'agent : le runtime attend l'humain et ne fait que surveiller.
-- `labels` pose les préfixes d'affectation ; les labels système (`needs:human`, `agent:pause`, `agent:lost`,
-  `spec:question`) sont fixes et communs à tous les flows.
+- Agents and the CLI speak **logical keys** (`uns move <ref> review`), never column names.
+- A `human: true` role has no agent: the runtime only watches and waits for the human.
+- `label` sets the assignment prefix of a role. System labels (`needs:human`, `agent:pause`, `agent:lost`,
+  `spec:question`) are fixed and shared by every flow.
 
-## 4. Déclencheurs (liste fermée, codée et testée)
+## 4. Triggers (closed set, coded and tested)
 
-| Déclencheur | Condition | Équivalent PoC |
-|---|---|---|
-| `item_new` | item dans l'état, jamais traité par ce rôle | `spec` |
-| `human_comment` | nouveau commentaire d'un membre humain depuis le dernier passage | `spec-answer`, `rework` |
-| `assigned` | label du rôle posé, état `ready`, non bloqué, agent libre | `take` |
-| `pr_updated` | tête de la PR liée a changé | `review` |
-| `pr_conflict` | PR liée non mergeable | `conflict` |
-| `ci_failed` | CI rouge sur la PR liée | (manuel dans le PoC) |
-| `unblocked` | toutes les dépendances fermées | implicite |
+| Trigger | Fires when |
+|---|---|
+| `item_new` | item is in the state and has never been handled by this role |
+| `human_comment` | a new comment from a human member since the agent's last pass |
+| `assigned` | the role label is set, state is `ready`, item not blocked, agent idle |
+| `pr_updated` | the head commit of the linked PR changed |
+| `pr_conflict` | the linked PR is not mergeable |
+| `ci_failed` | CI is red on the linked PR |
+| `unblocked` | all dependencies are closed |
 
-Ajouter un déclencheur = code + tests dans le runtime, jamais dans la config.
-Priorité de livraison : travail en cours (`pr_conflict`, `ci_failed`, `human_comment` en `doing`) > relecture > spec > prise.
+Adding a trigger = code + tests in the runtime, never in a config.
+Delivery priority: work in progress (`pr_conflict`, `ci_failed`, `human_comment` in `doing`) > review > spec > new work.
 
 ## 5. Backends
 
-Deux interfaces, car GitHub joue deux rôles dont un seul est remplaçable par Trello & co.
+Two interfaces, because GitHub plays two roles and only one of them is replaceable by Trello & co.
 
 ```python
 class Board(Protocol):            # GitHub Projects, Trello, Linear, Jira…
@@ -115,75 +114,79 @@ class Board(Protocol):            # GitHub Projects, Trello, Linear, Jira…
     def move(self, item: Ref, state: str) -> None: ...
     def labels(self, item: Ref, add: list[str] = (), remove: list[str] = ()) -> None: ...
     def comment(self, item: Ref, body: str) -> CommentId: ...
-    def upsert_comment(self, item: Ref, marker: str, body: str) -> None: ...   # commentaire de statut
-    def ensure_layout(self, flow: Flow, apply: bool) -> Plan: ...              # colonnes + labels (ex-align)
+    def upsert_comment(self, item: Ref, marker: str, body: str) -> None: ...   # status comment
+    def ensure_layout(self, flow: Flow, apply: bool) -> Plan: ...              # columns + labels
 
-class Forge(Protocol):            # GitHub, GitLab… ; optionnel (flow content sur Trello = pas de forge)
+class Forge(Protocol):            # GitHub, GitLab…; optional (a content flow on Trello needs none)
     def linked_prs(self, item: Ref) -> list[PR]: ...                          # head, mergeable, ci, review
 ```
 
-- **v0 : seuls `github-projects` et `github` sont implémentés.** L'interface existe pour ne pas coller le cœur à GraphQL ;
-  un backend Trello s'écrira le jour où un projet réel en aura besoin.
-- Les agents ne touchent **jamais** le board en direct (`gh project …` interdit dans les skills) : tout passe par la CLI `uns`.
-  `git` et `gh pr` restent permis (c'est la forge).
-- Identité : le backend gère l'auth (GitHub App par agent ; Trello = un membre par bot). Le cœur ne voit qu'un token.
+- **v0 implements only `github-projects` and `github`**, both on top of the `gh` CLI (already authenticated,
+  handles pagination and GraphQL; agent tokens are passed through `GH_TOKEN`). The interface exists so the core
+  never depends on GraphQL; a Trello backend gets written when a real project needs it.
+- Agents **never** touch the board directly (no `gh project …` in skills): everything goes through `uns`.
+  `git` and `gh pr` stay allowed (that is the forge).
+- Identity is the backend's job (one GitHub App per agent; on Trello, one member per bot). The core only sees a token.
 
-## 6. Cœur du runtime (repris du PoC, éprouvé)
+## 6. Runtime core
 
-- **Poll** : `uns poll --agent <a>` toutes les `poll_min` ; sortie vide = 0 token. Dédoublonnage par clé d'événement.
-- **Une tâche à la fois** par agent ; la suivante n'est livrée qu'après statut `done`/`blocked`.
-- **Statut** : un commentaire unique par agent et par ticket (🟢 / ✅ / ⏸️, Fait / RAF), battement de cœur lu de l'extérieur.
-  Muet après `ack_min` → relance ; après `stale_min` → `agent:lost` + alerte.
-- **Budgets** : `max_events_per_day`, `max_runs` par ticket, `max_review_rounds` → `needs:human`.
-- **Kill switches** : label `agent:pause` (ticket), fichier `PAUSE` (instance).
-- **Digest** : alertes toutes les 15 min (silencieux si rien) + résumé quotidien.
-- **Sécurité** : contenu de non-membres ignoré ; affectation = validation humaine ; contenu externe = donnée ;
-  aucun agent ne merge ni ne pousse sur la branche par défaut.
+- **Poll**: `uns poll --agent <a>` every `poll_min`; empty output = zero tokens spent. Events are deduplicated by key.
+- **One task at a time** per agent; the next event is delivered only once the current task is `done` or `blocked`.
+- **Status**: a single comment per agent and per item (🟢 / ✅ / ⏸️, Done / Next), the heartbeat read from outside.
+  Silent after `ack_min` → nudge; after `stale_min` → `agent:lost` + alert.
+- **Budgets**: `max_events_per_day`, `max_runs` per item, `max_review_rounds` → `needs:human`.
+- **Kill switches**: `agent:pause` label (item), `PAUSE` file (instance).
+- **Digest**: alerts every 15 min (silent when nothing happens) + a daily summary.
+- **Security**: content from non-members is ignored; assignment = human validation of the item; external content
+  is data, never instructions; no agent merges or pushes to a default branch.
 
-## 7. Intégration agent (Hermes et autres)
+## 7. Agent integration (Hermes and others)
 
-Le runtime **émet des événements** (texte + JSON) et ne sait pas qui les traite. Un adaptateur les livre :
-- `hermes` (v0) : cron `--no-agent` → `bot-chat` du profil (sérialise les tours = verrou naturel par agent).
-- Autres (Claude Code, script…) plus tard, même contrat.
+The runtime **emits events** (text + JSON) and does not care who handles them. An adapter delivers them:
+- `hermes` (v0): `--no-agent` cron → the profile's `bot-chat` (turns are serialised per profile = natural per-agent lock).
+- Others (Claude Code, plain scripts…) later, same contract.
 
-Skills de fondation livrées : `unstrikeable-agent` (comment traiter un événement, CLI, statut) et
-`unstrikeable-admin` (setup, align, ajout d'agent, mise à jour). Les playbooks de flow s'y ajoutent.
+Foundation skills shipped: `unstrikeable-agent` (handling an event, the CLI, status) and
+`unstrikeable-admin` (setup, align, adding an agent, updates). Flow playbooks plug into them.
 
-## 8. Mémoire partagée
+## 8. Shared memory
 
-Objectif : ce qu'un agent apprend profite aux autres, sans conflit git ni empoisonnement.
+Goal: what one agent learns benefits the others, without git conflicts or poisoning.
 
-1. **Écriture en ajout seul** : `memory/inbox/<agent>/<yyyy-mm-dd>-<slug>.md`, un fichier par entrée,
-   commit direct sur la branche par défaut du repo de config (noms uniques → aucun conflit possible).
-2. **Rôle `curator`** (un agent existant peut le cumuler, ex. le PM) : déclenché quand l'inbox dépasse N entrées
-   ou une fois par jour, il synthétise dans `memory/shared/*.md` via **une PR**, et vide les entrées traitées.
-3. **Relecture humaine obligatoire** de cette PR : une mémoire lue par tous est un vecteur d'injection
-   (un agent qui a lu une issue piégée pourrait contaminer toute l'équipe). Pas de merge automatique.
-4. **Lecture** : chaque agent lit `memory/shared/` + son propre inbox, jamais l'inbox des autres.
-5. **Contenu** : faits et procédures réutilisables, pas de journaux de session ni de secrets.
-   Plafond de taille de `shared/` (à fixer) : le curator condense au lieu d'empiler.
+1. **Append-only writes**: `memory/inbox/<agent>/<yyyy-mm-dd>-<slug>.md`, one file per entry, committed straight
+   to the config repo's default branch (unique names → no conflict possible).
+2. **`curator` role** (an existing agent may hold it): triggered when the inbox exceeds N entries or once a day,
+   it consolidates into `memory/shared/*.md` through **a PR** and removes the processed entries.
+3. **Mandatory human review** of that PR: memory read by every agent is an injection vector
+   (an agent that read a booby-trapped issue could contaminate the whole team). No auto-merge.
+4. **Reads**: each agent reads `memory/shared/` plus its own inbox, never another agent's inbox.
+5. **Content**: reusable facts and procedures, no session logs, no secrets.
+   `shared/` has a size cap (TBD): the curator condenses instead of piling up.
 
-Exception à la règle « aucun agent ne pousse sur la branche par défaut » : limitée à `memory/inbox/<soi>/` du repo de config.
+The only exception to "no agent pushes to a default branch": its own `memory/inbox/<self>/` in the config repo.
 
-## 9. Distribution et mise à jour
+## 9. Distribution and updates
 
-- Paquet Python ≥ 3.10, dépendance unique PyYAML (le PoC était stdlib pur ; YAML le justifie).
-- `uns update` : met à jour le runtime à la dernière version compatible avec `runtime:` de la config, réinstalle
-  les skills dans chaque profil hôte, recopie dans les comptes SSH, puis `poll --dry-run` de chaque agent
-  (même logique que `update.py` du PoC). Une version cassée ne part que chez ceux qui ont élargi l'épinglage.
+- Python ≥ 3.10 package; runtime dependencies: PyYAML and the `gh` CLI.
+- `uns update`: upgrades the runtime to the latest version allowed by the config's `runtime:` pin, reinstalls the
+  skills in every hosting profile (including profiles whose terminal runs under another account over SSH), then runs
+  `poll --dry-run` for each agent. A broken release only reaches instances whose pin allows it.
 
 ## 10. Plan
 
-1. **v0.1** : cœur + backend GitHub + profils `dev` et `content` + adaptateur Hermes + tests.
-   Premier utilisateur : **Kevin** sur `usejul/jul-marketing` (flow `content`).
-2. **v0.2** : mémoire partagée + curator.
-3. Migration du board JuL (flow `dev`) une fois v0.1 éprouvée sur Kevin ; arrêt de `hermes-gh-agents` ensuite.
+1. **v0.1**: core + GitHub backends + `dev` and `content` profiles + Hermes adapter + tests.
+   First pilot: a content board run by one writer agent (Kevin).
+2. **v0.2**: shared memory + curator.
+3. Existing agent boards are migrated later, once v0.1 has run in production.
 
-## 11. Questions ouvertes
+## 11. Decisions
 
-- Langue de la doc et des messages : français (comme le PoC) ou anglais (si on vise l'open source) ?
-- Backend GitHub : garder la CLI `gh` (simple, déjà auth) ou appels HTTP directs (pas de dépendance binaire, mieux en Docker) ?
-- Nom de la CLI : `uns` proposé.
-- Conversations du flow `content` (réponses aux commentaires) : un fichier par conversation, une section par échange,
-  une issue par réponse à rédiger — à confirmer à l'usage.
-- Org dédiée `unstrikeable` sur GitHub à créer avant que le nom parte (repo transférable sans perte).
+- Language: English (docs, messages, CLI).
+- GitHub backends use the `gh` CLI.
+- CLI name: `uns`.
+
+## 12. Open questions
+
+- Content flow conversations (replies to comments): one file per conversation, one section per exchange,
+  one item per reply to write — to confirm with real use.
+- A dedicated `unstrikeable` GitHub org, to be created before someone takes the name (the repo can be transferred without loss).
