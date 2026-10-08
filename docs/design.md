@@ -115,6 +115,21 @@ Vocabulary:
 - **Roles are per department**: Kevin is `writer` in marketing; the same agent could be `reviewer` elsewhere.
   `limits` apply per agent, across all its departments.
 
+### `agents.<a>.instance`: where an agent runs
+
+An agent must be hosted by **exactly one** instance (machine + account running `uns poll` for it).
+Each instance only knows its own `local.yml`; two instances listing the same agent cannot see each other, and
+would both deliver every event (two sessions on one item), each with its own state, budgets and cost quotas
+(so the real spend could reach twice the cap).
+
+`instance` in `config.yml` is the shared source of truth: "Kevin runs on `mac-mini`". At each poll, the instance
+compares it with its own `instance` in `local.yml` and **refuses to poll** an agent declared elsewhere.
+
+- Moving an agent = change this one line; the old instance stops by itself at its next poll.
+- Optional: without `instance`, no check is made.
+- It guards against configuration mistakes, not against a hostile instance (two machines both claiming
+  `mac-mini` would pass). It is not a secret, but it does reveal a machine name in the config repo.
+
 ### `culture.md`: the company mindset
 
 Free-form Markdown, written by humans: why the company exists, what it values, how it works.

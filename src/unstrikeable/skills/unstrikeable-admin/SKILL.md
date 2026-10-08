@@ -12,7 +12,7 @@ description: "Use when setting up or operating unstrikeable. Config repo, instan
   `flows/`, `playbooks/`, `skills/`, `memory/`. See `docs/design.md`.
 - **Instance** (`$UNS_HOME`, default `~/.unstrikeable`, chmod 700): `local.yml` (600), `state/`, `PAUSE`.
   ```yaml
-  instance: mac-mini                 # must match agents.<a>.instance in config.yml
+  instance: mac-mini                 # must match agents.<a>.instance in config.yml (see below)
   config: ~/company                  # local clone of the config repo
   skills_dirs:                       # where `uns update` reinstalls the shipped skills
     - ~/.hermes/profiles/kevin/skills
@@ -22,6 +22,13 @@ description: "Use when setting up or operating unstrikeable. Config repo, instan
       app_id: 123456                 # optional: GitHub App; without it, the instance's `gh` auth is used
       app_key: ~/.unstrikeable/keys/kevin.pem
   ```
+
+## Where an agent runs (`instance`)
+
+An agent must be polled by exactly one instance. `agents.<a>.instance` in `config.yml` says which one; each
+instance refuses to poll an agent declared elsewhere. Without it, two instances listing the same agent in their
+`local.yml` would both deliver every event, with separate states, budgets and cost quotas (double spend).
+To move an agent: change that line, then set it up on the new instance; the old one stops by itself.
 
 ## Hire an agent
 
