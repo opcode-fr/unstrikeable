@@ -1,0 +1,14 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv venv -p 3.12 && uv pip install -e '.[dev]'
+      - run: uvx ruff@0.16.8 check src tests --isolated --select F,E9,B023,B904 --line-length 120
+      - run: .venv/bin/pytest
