@@ -140,6 +140,13 @@ Gerard is a senior ML engineer. Terse, measures before claiming.
 - A capability is a **claim, not a permission**: the credentials behind it live in that instance's `local.yml`,
   and humans still assign. Declaring "I can publish on X" without the token simply fails at run time.
 
+### Agent presets
+
+The runtime ships ready-made agent sheets (personality + suggested roles per flow, no capabilities):
+Kevin (community manager), Brandon (growth hacker), Capucine (project manager), Jeanmi (developer),
+Didier (reviewer). `uns hire <preset> [--as <name>]` copies one into `agents/<name>.md` and prints the
+`config.yml` lines to add; the human then writes the real capabilities of that instance.
+
 ### What an agent receives with each event
 
 `culture.md` → `agents/<self>.md` → `memory/shared/` → `memory/agents/<self>/` → flow playbook for (role, trigger) → the event itself.

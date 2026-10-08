@@ -113,3 +113,35 @@ def test_check_warns_about_a_long_culture(env, capsys):
     assert cli.main(["check"]) == 0
     out = capsys.readouterr().out
     assert "marketing: flow content, 1 staff" in out and "culture.md is long" in out
+
+
+def test_hire_writes_the_sheet_in_the_config_repo(env, capsys):
+    home, _ = env
+    assert cli.main(["hire", "capucine", "--department", "marketing"]) == 0
+    assert (home.parent / "company" / "agents" / "capucine.md").exists()
+    assert "- planner" in capsys.readouterr().out
+
+
+def test_hire_list_shows_presets(env, capsys):
+    assert cli.main(["hire", "--list"]) == 0
+    out = capsys.readouterr().out
+    assert "kevin" in out and "didier" in out
+
+
+def test_digest_alerts_once(env, capsys):
+    home, _ = env
+    (home / "state").mkdir()
+    (home / "state" / "poll-kevin.json").write_text(json.dumps(
+        {"alerts": [{"ts": 5, "ref": "acme/mkt#1", "msg": "lost"}]}))
+    assert cli.main(["digest", "--alerts"]) == 0
+    assert "acme/mkt#1 · lost" in capsys.readouterr().out
+    assert cli.main(["digest", "--alerts"]) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_check_flags_a_runtime_outside_the_pin(env, capsys):
+    home, _ = env
+    cfg = home.parent / "company" / "config.yml"
+    cfg.write_text('runtime: "<0.0.1"\n' + cfg.read_text())
+    assert cli.main(["check"]) == 0
+    assert "does NOT match" in capsys.readouterr().out

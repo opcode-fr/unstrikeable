@@ -13,11 +13,14 @@ from pathlib import Path
 
 import yaml
 
+from . import admin
 from .backends.base import Board
 from .backends.github import GitHubBoard, GitHubError
 from .config import Company, ConfigError, Department, load_company
+from .digest import digest
 from .model import AGENT_MARK
 from .poll import poll
+from .presets import hire, list_presets
 from .status import STATES, parse_status, status_body
 
 CULTURE_MAX_WORDS = 600          # ~1 page; it is injected in every event
@@ -186,6 +189,9 @@ def cmd_check(a: argparse.Namespace) -> None:
     co = load(load_local())
     for d in co.departments.values():
         print("%s: flow %s, %d staff, board %s" % (d.name, d.flow.name, len(d.staff), d.board.get("type")))
+    if co.runtime:
+        v = admin.installed_version()
+        print("runtime %s %s %s" % (v, "matches" if admin.version_ok(v, co.runtime) else "does NOT match", co.runtime))
     culture = co.root / "culture.md"
     if culture.exists() and len(culture.read_text().split()) > CULTURE_MAX_WORDS:
         print("warning: culture.md is long (%d words > %d): it is sent with every event" % (
@@ -200,6 +206,49 @@ def cmd_layout(a: argparse.Namespace) -> None:
         plan = make_board(co, d, None).ensure_layout(d, apply=a.apply)
         print("## %s" % d.name)
         print("\n".join("  " + line for line in plan) if plan else "  = OK")
+
+
+def cmd_hire(a: argparse.Namespace) -> None:
+    if a.list or not a.preset:
+        for p in list_presets():
+            print("%-10s %s  (%s)" % (p.name, p.summary, "; ".join(
+                "%s: %s" % (f, ", ".join(r)) for f, r in p.roles.items())))
+        return
+    co = load(load_local())
+    path, snippet = hire(a.preset, co.root, name=a.as_name, department=a.department)
+    print("wrote %s (add its real capabilities)\nadd to config.yml:\n%s" % (path, snippet))
+
+
+def cmd_digest(a: argparse.Namespace) -> None:
+    local = load_local()
+    states = {}
+    for agent in sorted(local.get("agents") or {}):
+        p = home() / "state" / ("poll-%s.json" % agent)
+        states[agent] = json.loads(p.read_text()) if p.exists() else {}
+    cursor_path = home() / "state" / "digest-cursor.json"
+    cursor = json.loads(cursor_path.read_text())["ts"] if cursor_path.exists() else 0
+    text, new = digest(states, cursor, time.strftime("%Y-%m-%d"), a.alerts, local.get("instance", "?"))
+    if text:
+        print(text)
+    if new != cursor and not a.dry_run:
+        cursor_path.parent.mkdir(parents=True, exist_ok=True)
+        cursor_path.write_text(json.dumps({"ts": new}))
+
+
+def cmd_app(a: argparse.Namespace) -> None:
+    if a.action == "form":
+        out = admin.app_form(a.org, a.agent, Path(a.out or "app-%s-%s.html" % (a.agent, a.org)))
+        print("open %s in a browser logged in as an owner of %s" % (out.resolve(), a.org))
+    else:
+        info = admin.app_exchange(a.code, a.agent, home())
+        print(json.dumps(info, indent=1))
+        print("then: install the App (install_url) on the department repos, and in local.yml:\n"
+              "  %s: {app_id: %s, app_key: %s}" % (a.agent, info["app_id"], info["app_key"]))
+
+
+def cmd_update(a: argparse.Namespace) -> None:
+    local = load_local()
+    print(admin.update(local, load(local).runtime))
 
 
 def cmd_token(a: argparse.Namespace) -> None:
@@ -249,6 +298,28 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--department")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_layout)
+    p = sp.add_parser("hire", help="add an agent to the company from a preset (--list to see them)")
+    p.add_argument("preset", nargs="?")
+    p.add_argument("--as", dest="as_name")
+    p.add_argument("--department")
+    p.add_argument("--list", action="store_true")
+    p.set_defaults(fn=cmd_hire)
+    p = sp.add_parser("digest", help="human summary for Slack (--alerts: only new alerts, silent otherwise)")
+    p.add_argument("--alerts", action="store_true")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_digest)
+    p = sp.add_parser("app", help="create an agent's GitHub App: `form` (owner clicks), then `exchange CODE`")
+    asp = p.add_subparsers(dest="action", required=True)
+    f = asp.add_parser("form")
+    f.add_argument("--org", required=True)
+    f.add_argument("--agent", required=True)
+    f.add_argument("--out")
+    e = asp.add_parser("exchange")
+    e.add_argument("code")
+    e.add_argument("--agent", required=True)
+    p.set_defaults(fn=cmd_app)
+    p = sp.add_parser("update", help="upgrade the runtime, reinstall skills, dry-run every hosted agent")
+    p.set_defaults(fn=cmd_update)
     p = sp.add_parser("token", help="print a GitHub App token for the agent")
     p.add_argument("--agent", required=True)
     p.set_defaults(fn=cmd_token)

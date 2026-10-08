@@ -8,6 +8,8 @@ and guardrails built in (one task at a time, budgets, heartbeat, kill switches).
 - Design: [docs/design.md](docs/design.md)
 - Flows shipped: [`dev`](src/unstrikeable/flows/dev.yml) (spec → code → review → merge) and
   [`content`](src/unstrikeable/flows/content.yml) (idea → brief → draft → review → publish).
+- Agent presets: Kevin (community manager), Brandon (growth hacker), Capucine (project manager),
+  Jeanmi (developer), Didier (reviewer): `uns hire --list`.
 - Skills: [`unstrikeable-agent`](src/unstrikeable/skills/unstrikeable-agent/SKILL.md) (agents) and
   [`unstrikeable-admin`](src/unstrikeable/skills/unstrikeable-admin/SKILL.md) (setup and operations).
 
@@ -37,6 +39,10 @@ uns poll --agent kevin --dry-run   # what Kevin would receive right now
 | `uns comment REF --agent A --body-file F` | agents | signed comment |
 | `uns label REF --agent A --add/--remove L` | agents | state labels (never assignments) |
 | `uns layout [--department D] [--apply]` | admins | create missing columns and labels |
+| `uns hire PRESET [--as NAME] [--department D]` / `--list` | admins | add an agent from a preset |
+| `uns app form --org O --agent A` / `uns app exchange CODE --agent A` | admins | create the agent's GitHub App |
+| `uns digest [--alerts]` | cron | Slack summary, or only new alerts (silent otherwise) |
+| `uns update` | cron / admins | upgrade runtime, reinstall skills, dry-run every agent |
 | `uns check` | admins | validate the config |
 | `uns token --agent A` | admins | GitHub App token of an agent |
 

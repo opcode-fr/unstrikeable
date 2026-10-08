@@ -114,6 +114,7 @@ class Company:
     agents: dict[str, dict[str, Any]]
     limits: dict[str, Any]
     forge: dict[str, Any] | None = None
+    runtime: str = ""                                # version pin of the runtime
 
     def departments_of(self, agent: str) -> list[Department]:
         return [d for d in self.departments.values() if agent in d.staff]
@@ -195,4 +196,5 @@ def load_company(root: Path | str) -> Company:
                 if r not in flow.roles:
                     raise ConfigError("%s: %s has role %r, not in flow %s" % (name, a, r, flow.name))
         depts[name] = Department(name, flow, dict(d.get("board") or {}), list(d.get("repos") or []), staff)
-    return Company(root, depts, agents, {**DEFAULT_LIMITS, **(raw.get("limits") or {})}, raw.get("forge"))
+    return Company(root, depts, agents, {**DEFAULT_LIMITS, **(raw.get("limits") or {})}, raw.get("forge"),
+                   str(raw.get("runtime") or ""))

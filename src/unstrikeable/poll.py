@@ -119,7 +119,7 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
                 _flag(board, cur["ref"], agent, "agent:lost", why)
             seen.discard(cur["key"])                           # re-delivered once a human removes the label
             work["current"] = None
-            work.setdefault("alerts", []).append({"ts": now, "ref": cur["ref"], "msg": why})
+            work["alerts"] = (work.get("alerts") or [])[-199:] + [{"ts": now, "ref": cur["ref"], "msg": why}]
             return _finish(state, work, seen, "", dry_run)
 
     # 2. free: pick the next event, one at a time
