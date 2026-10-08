@@ -114,7 +114,7 @@ def events_for(agent: str, dept: Department, items: list[Item]) -> list[Event]:
             if not role.labelled and not it.author_trusted and not _assignees(dept, it, rname):
                 continue                                  # outsider item, not vetted by a member
 
-            def ev(trigger, disc, comment=None):
+            def ev(trigger, disc, comment=None, it=it, rname=rname):
                 key = "%s|%s|%s|%s|%s" % (dept.name, it.ref, rname, trigger, disc)
                 out.append(Event(key, agent, dept.name, rname, trigger, it, comment))
 
