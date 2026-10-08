@@ -18,8 +18,10 @@ from .backends.base import Board
 from .backends.github import GitHubBoard, GitHubError
 from .config import Company, ConfigError, Department, load_company
 from .digest import digest
+from .memory import commit_and_push, pull, write_entry
+from .meter import make_meter
 from .model import AGENT_MARK
-from .poll import poll
+from .poll import MEMORY_REF, poll
 from .presets import hire, list_presets
 from .status import STATES, parse_status, status_body
 
@@ -118,6 +120,8 @@ def cmd_poll(a: argparse.Namespace) -> None:
     if (home() / "PAUSE").exists():
         return
     local = load_local()
+    if local.get("config"):
+        pull(Path(os.path.expanduser(local["config"])))
     co = load(local)
     me = co.agents.get(a.agent)
     if me is None:
@@ -125,15 +129,29 @@ def cmd_poll(a: argparse.Namespace) -> None:
     if me.get("instance") and local.get("instance") and me["instance"] != local["instance"]:
         raise UsageError("agent %r is hosted on instance %r, not %r: refusing to poll" % (
             a.agent, me["instance"], local["instance"]))
-    path = home() / "state" / ("poll-%s.json" % a.agent)
-    state = json.loads(path.read_text()) if path.exists() else {}
+    state = read_state(a.agent)
     boards = {d.name: make_board(co, d, a.agent) for d in co.departments_of(a.agent)}
-    out = poll(a.agent, co, boards, state, dry_run=a.dry_run)
+    meter = make_meter(((local.get("agents") or {}).get(a.agent) or {}).get("meter"))
+    out = poll(a.agent, co, boards, state, dry_run=a.dry_run, meter=meter)
     if out:
         print("Load the `unstrikeable-agent` skill and handle this event.\n\n" + out)
     if not a.dry_run:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(state, indent=1))
+        write_state(a.agent, state)
+
+
+def state_path(agent: str) -> Path:
+    return home() / "state" / ("poll-%s.json" % agent)
+
+
+def read_state(agent: str) -> dict:
+    p = state_path(agent)
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def write_state(agent: str, state: dict) -> None:
+    p = state_path(agent)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(state, indent=1))
 
 
 def _target(a: argparse.Namespace) -> tuple[Company, Department, Board]:
@@ -157,6 +175,15 @@ def cmd_move(a: argparse.Namespace) -> None:
 
 
 def cmd_status(a: argparse.Namespace) -> None:
+    if a.ref == MEMORY_REF:                       # curation task: no board item, the status lives in the state
+        state = read_state(a.agent)
+        prev = state.get("memory_status") or {}
+        now = int(time.time())
+        since = prev.get("since", now) if prev.get("state") == "working" or a.state != "working" else now
+        state["memory_status"] = {"state": a.state, "since": since, "beat": now}
+        write_state(a.agent, state)
+        print("memory status %s -> %s" % (a.agent, a.state))
+        return
     _, _, board = _target(a)
     it = board.item(a.ref)
     prev = None
@@ -251,6 +278,44 @@ def cmd_update(a: argparse.Namespace) -> None:
     print(admin.update(local, load(local).runtime))
 
 
+def cmd_remember(a: argparse.Namespace) -> None:
+    co = load(load_local())
+    body = Path(a.body_file).read_text() if a.body_file else (a.body or "")
+    if not body.strip():
+        raise UsageError("empty note (use --body or --body-file)")
+    try:
+        path = write_entry(co.root, a.agent, a.title, body, share=a.share)
+    except ValueError as e:
+        raise UsageError(str(e)) from e
+    if (co.root / ".git").exists():
+        commit_and_push(co.root, [path], "memory(%s): %s" % (a.agent, a.title))
+    print("%s %s" % ("proposed to the team" if a.share else "noted", path.relative_to(co.root)))
+
+
+def cmd_pause(a: argparse.Namespace) -> None:
+    if not a.agent:
+        home().mkdir(parents=True, exist_ok=True)
+        (home() / "PAUSE").write_text(a.reason or "")
+        print("instance paused: no agent receives anything until `uns resume`")
+        return
+    state = read_state(a.agent)
+    state["paused"] = {"ts": int(time.time()), "reason": a.reason or "manual", "by": "human"}
+    write_state(a.agent, state)
+    print("%s paused" % a.agent)
+
+
+def cmd_resume(a: argparse.Namespace) -> None:
+    if not a.agent:
+        (home() / "PAUSE").unlink(missing_ok=True)
+        print("instance resumed")
+        return
+    state = read_state(a.agent)
+    state.pop("paused", None)
+    state.pop("usage", None)                      # re-read the meter now
+    write_state(a.agent, state)
+    print("%s resumed" % a.agent)
+
+
 def cmd_token(a: argparse.Namespace) -> None:
     co = load(load_local())
     owner = next((d.board.get("owner") for d in co.departments_of(a.agent)), None)
@@ -320,6 +385,20 @@ def parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=cmd_app)
     p = sp.add_parser("update", help="upgrade the runtime, reinstall skills, dry-run every hosted agent")
     p.set_defaults(fn=cmd_update)
+    p = sp.add_parser("remember", help="write a memory note (--share: propose it to the team via the curator)")
+    p.add_argument("--agent", required=True)
+    p.add_argument("--title", required=True)
+    p.add_argument("--body")
+    p.add_argument("--body-file")
+    p.add_argument("--share", action="store_true")
+    p.set_defaults(fn=cmd_remember)
+    p = sp.add_parser("pause", help="kill switch: one agent (--agent) or the whole instance")
+    p.add_argument("--agent")
+    p.add_argument("--reason")
+    p.set_defaults(fn=cmd_pause)
+    p = sp.add_parser("resume", help="lift a pause (manual or quota)")
+    p.add_argument("--agent")
+    p.set_defaults(fn=cmd_resume)
     p = sp.add_parser("token", help="print a GitHub App token for the agent")
     p.add_argument("--agent", required=True)
     p.set_defaults(fn=cmd_token)

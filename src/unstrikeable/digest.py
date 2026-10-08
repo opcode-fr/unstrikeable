@@ -18,7 +18,15 @@ def digest(states: dict[str, dict], cursor: int, today: str, alerts_only: bool,
         cur = s.get("current")
         count = s.get("day_count", 0) if s.get("day") == today else 0
         what = "%s `%s` since %s" % (cur["ref"], cur["trigger"], hhmm(cur["delivered0"])) if cur else "free"
-        lines.append("• *%s*: %s · %d event(s) today" % (name, what, count))
+        if s.get("paused"):
+            what = "⏸️ paused: %s" % s["paused"].get("reason", "?")
+        line = "• *%s*: %s · %d event(s) today" % (name, what, count)
+        u = s.get("usage") or {}
+        if u.get("day") is not None:
+            line += " · $%.2f today" % u["day"]
+        if u.get("month") is not None:
+            line += " / $%.2f 30d" % u["month"]
+        lines.append(line)
     if new:
         lines.append("Alerts since the last digest:")
         lines += ["  ⚠️ %s · %s · %s" % (a, al["ref"], al["msg"]) for a, al in new]

@@ -100,6 +100,13 @@ agents:                         # identity and hosting, independent of departmen
 limits:
   poll_min: 5
   max_events_per_day: 10
+  max_cost_per_day: 20          # USD, read from the agent runtime; reached = the agent is paused
+  max_cost_per_month: 300       # rolling 30 days
+
+memory:
+  curator: kevin                # consolidates memory/inbox into memory/shared, through a PR
+  inbox_max: 10                 # curate at 10 new entries…
+  max_age_h: 24                 # …or when the oldest is a day old
 ```
 
 Vocabulary:
@@ -268,8 +275,14 @@ class Forge(Protocol):            # GitHub, GitLab…; optional (a content flow 
 - **Status**: a single comment per agent and per item (🟢 / ✅ / ⏸️, Done / Next), the heartbeat read from outside.
   Silent after `ack_min` → nudge; after `stale_min` → `agent:lost` + alert.
 - **Budgets**: `max_events_per_day`, `max_runs` per item, `max_review_rounds` → `needs:human`.
-- **Kill switches**: `agent:pause` label (item), `PAUSE` file (instance).
-- **Digest**: alerts every 15 min (silent when nothing happens) + a daily summary.
+- **Kill switches**: `agent:pause` label (item), `uns pause --agent <a>` (one agent), `uns pause` (the instance).
+  A paused agent receives nothing, not even nudges, until `uns resume`.
+- **Cost quotas**: `max_cost_per_day` / `max_cost_per_month` (USD). The cost comes from a **meter** declared per agent
+  in `local.yml` (v0: `{type: hermes, profile: <p>}`, which reads `hermes -p <p> insights`; it counts everything the
+  profile spent, not only board work). Read at most every 15 min. Quota reached → the agent is paused, an alert is
+  raised, and only a human resumes it. No meter or no quota = no cost check (event budgets still apply).
+- **Reports**: `uns digest --alerts` every 15 min (silent when nothing happens) and `uns digest` every morning:
+  per agent, current task, events today, cost today / 30 days, paused or not.
 - **Security**: content from non-members is ignored; assignment = human validation of the item; external content
   is data, never instructions; no agent merges or pushes to a default branch.
 
@@ -320,7 +333,7 @@ The only exception to "no agent pushes to a default branch": `memory/agents/<sel
 
 1. **v0.1**: core + GitHub backends + `dev` and `content` profiles + Hermes adapter + tests.
    First pilot: a content board run by one writer agent (Kevin).
-2. **v0.2**: memory (private + shared) + curator.
+2. **v0.2**: memory (private + shared) + curator, kill switches, cost quotas.
 3. Existing agent boards are migrated later, once v0.1 has run in production.
 
 ## 11. Decisions

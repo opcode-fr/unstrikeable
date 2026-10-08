@@ -20,6 +20,14 @@ your sheet and the playbook to follow.
 4. **Finish, always**: `--state done --done "<what changed, what is verified>"`, or `--state blocked --note "<what you need>"`.
    Without it you get nudged, then marked `agent:lost`.
 
+## Memory
+
+- The event carries the shared memory and your own notes. Use them; they were written for this.
+- Learned something reusable (a fact, a pitfall, a procedure)? `uns remember --agent <you> --title "…" --body-file <md>`.
+  Add `--share` to propose it to the team: the curator reviews it, a human approves it.
+- Write a rule and its reason, not a log. Never a secret, a token or personal data (`uns` refuses obvious secrets).
+- Curator task (`curator.curate`, item `memory`): follow its playbook, and report with `uns status memory --agent <you> …`.
+
 ## Rules
 
 - One event, one item. Do not touch other items.

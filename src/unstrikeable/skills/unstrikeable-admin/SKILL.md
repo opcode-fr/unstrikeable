@@ -18,6 +18,7 @@ description: "Use when setting up or operating unstrikeable. Config repo, instan
     - ~/.hermes/profiles/kevin/skills
   agents:
     kevin:                           # only agents hosted here
+      meter: {type: hermes, profile: kevin}   # cost meter, needed for cost quotas
       app_id: 123456                 # optional: GitHub App; without it, the instance's `gh` auth is used
       app_key: ~/.unstrikeable/keys/kevin.pem
   ```
@@ -51,6 +52,14 @@ Install the `unstrikeable-agent` skill in the agent's profile.
   `uns digest` every morning, delivered to the human's channel.
 - Updates: `uns update` (upgrade, reinstall skills in `skills_dirs`, dry-run every hosted agent); as a cron every 6 h
   once trusted. `uns check` says whether the installed runtime matches the config's `runtime:` pin.
+
+## Kill switches and quotas
+
+- `uns pause --agent <a> [--reason …]` / `uns resume --agent <a>`: one agent. `uns pause` / `uns resume`: the instance.
+- `limits.max_cost_per_day` / `max_cost_per_month` in `config.yml`: reached → the agent pauses itself and raises an
+  alert; only `uns resume` restarts it. The Hermes meter counts the whole profile (Slack chats included).
+- Memory: `memory.curator` in `config.yml`. The curator's PR on the config repo must be reviewed by a human:
+  shared memory is read by every agent, it is the main injection risk.
 
 ## Pitfalls
 

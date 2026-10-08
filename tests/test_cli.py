@@ -145,3 +145,59 @@ def test_check_flags_a_runtime_outside_the_pin(env, capsys):
     cfg.write_text('runtime: "<0.0.1"\n' + cfg.read_text())
     assert cli.main(["check"]) == 0
     assert "does NOT match" in capsys.readouterr().out
+
+
+def _state(home):
+    return json.loads((home / "state" / "poll-kevin.json").read_text())
+
+
+def test_remember_writes_a_private_note(env, capsys):
+    home, _ = env
+    assert cli.main(["remember", "--agent", "kevin", "--title", "Hooks", "--body", "Two lines max"]) == 0
+    notes = list((home.parent / "company" / "memory" / "agents" / "kevin").glob("*.md"))
+    assert len(notes) == 1 and "Two lines max" in notes[0].read_text()
+
+
+def test_remember_share_goes_to_the_inbox(env):
+    home, _ = env
+    assert cli.main(["remember", "--agent", "kevin", "--title", "X", "--body", "280", "--share"]) == 0
+    assert list((home.parent / "company" / "memory" / "inbox" / "kevin").glob("*.md"))
+
+
+def test_remember_refuses_secrets(env, capsys):
+    assert cli.main(["remember", "--agent", "kevin", "--title", "t", "--body", "AKIA" + "A" * 16]) == 2
+    assert "secret" in capsys.readouterr().err
+
+
+def test_status_memory_is_kept_locally(env):
+    home, _ = env
+    assert cli.main(["status", "memory", "--agent", "kevin", "--state", "done"]) == 0
+    assert _state(home)["memory_status"]["state"] == "done"
+
+
+def test_pause_and_resume_an_agent(env, capsys):
+    home, _ = env
+    assert cli.main(["pause", "--agent", "kevin", "--reason", "too chatty"]) == 0
+    assert _state(home)["paused"]["reason"] == "too chatty"
+    assert cli.main(["poll", "--agent", "kevin"]) == 0
+    assert "writer.assigned" not in capsys.readouterr().out
+    assert cli.main(["resume", "--agent", "kevin"]) == 0
+    assert cli.main(["poll", "--agent", "kevin"]) == 0
+    assert "writer.assigned" in capsys.readouterr().out
+
+
+def test_pause_without_agent_stops_the_whole_instance(env):
+    home, _ = env
+    assert cli.main(["pause"]) == 0 and (home / "PAUSE").exists()
+    assert cli.main(["resume"]) == 0 and not (home / "PAUSE").exists()
+
+
+def test_digest_shows_paused_agents_and_cost(env, capsys):
+    home, _ = env
+    (home / "state").mkdir(exist_ok=True)
+    (home / "state" / "poll-kevin.json").write_text(json.dumps({
+        "paused": {"ts": 1, "reason": "daily cost quota reached ($7.50 / $5.00)", "by": "quota"},
+        "usage": {"ts": 1, "day": 7.5, "month": 40.0}}))
+    assert cli.main(["digest"]) == 0
+    out = capsys.readouterr().out
+    assert "⏸️ paused: daily cost quota reached" in out and "$7.50 today" in out

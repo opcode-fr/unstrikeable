@@ -38,6 +38,8 @@ uns poll --agent kevin --dry-run   # what Kevin would receive right now
 | `uns status REF --agent A --state working\|done\|blocked` | agents | heartbeat comment |
 | `uns comment REF --agent A --body-file F` | agents | signed comment |
 | `uns label REF --agent A --add/--remove L` | agents | state labels (never assignments) |
+| `uns remember --agent A --title T --body-file F [--share]` | agents | private note, or proposal to the team |
+| `uns pause` / `uns resume` `[--agent A]` | humans | kill switch: one agent or the whole instance |
 | `uns layout [--department D] [--apply]` | admins | create missing columns and labels |
 | `uns hire PRESET [--as NAME] [--department D]` / `--list` | admins | add an agent from a preset |
 | `uns app form --org O --agent A` / `uns app exchange CODE --agent A` | admins | create the agent's GitHub App |
