@@ -208,3 +208,16 @@ def test_no_quota_configured_never_reads_the_meter(tmp_path):
     def meter(days):
         raise AssertionError("must not be called")
     poll("kevin", company(tmp_path), {"marketing": FakeBoard([])}, {}, T0, meter=meter)
+
+
+# ---------------------------------------------------------------- migration baseline
+def test_baseline_marks_current_events_as_delivered_without_sending_them(tmp_path):
+    from unstrikeable.poll import baseline
+    co, state = company(tmp_path), {}
+    mine = Comment(8, "kevin-acme", True, agent="kevin", body="brief")
+    asked = Comment(9, "brice", True, body="answer to the brief")
+    board = FakeBoard([item(1), item(2, "backlog", (), comments=[mine, asked])])
+    assert baseline("kevin", co, {"marketing": board}, state) == 2
+    assert run(co, board, state) == ""
+    board.set("acme/mkt#2", comments=[mine, asked, Comment(10, "brice", True, body="new info")])
+    assert "planner.human_comment" in run(co, board, state)      # new activity still flows

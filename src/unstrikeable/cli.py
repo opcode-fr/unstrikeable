@@ -22,7 +22,7 @@ from .digest import digest
 from .memory import commit_and_push, pull, write_entry
 from .meter import make_meter
 from .model import AGENT_MARK
-from .poll import MEMORY_REF, poll
+from .poll import MEMORY_REF, baseline, poll
 from .presets import hire, list_presets
 from .status import STATES, parse_status, status_body
 
@@ -343,6 +343,23 @@ def cmd_resume(a: argparse.Namespace) -> None:
     print("%s resumed" % a.agent)
 
 
+def cmd_baseline(a: argparse.Namespace) -> None:
+    co = load(load_local())
+    state = read_state(a.agent)
+    boards = {d.name: make_board(co, d, a.agent) for d in co.departments_of(a.agent)}
+    n = baseline(a.agent, co, boards, state)
+    write_state(a.agent, state)
+    print("%d event(s) marked as delivered for %s (nothing sent)" % (n, a.agent))
+
+
+def cmd_set(a: argparse.Namespace) -> None:
+    _, _, board = _target(a)
+    if a.field.lower() == "status":
+        raise UsageError("use `uns move` for the status (logical states)")
+    board.set_field(a.ref, a.field, a.value)
+    print("%s %s -> %s" % (a.ref, a.field, a.value))
+
+
 def cmd_token(a: argparse.Namespace) -> None:
     co = load(load_local())
     owner = next((d.board.get("owner") for d in co.departments_of(a.agent)), None)
@@ -372,6 +389,9 @@ def parser() -> argparse.ArgumentParser:
     p = item_cmd("move", cmd_move, "move an item to a state (logical key)")
     p.add_argument("state")
     p.add_argument("--force", action="store_true")
+    p = item_cmd("set", cmd_set, "set a single-select field of the board (Size, Priority…)")
+    p.add_argument("field")
+    p.add_argument("value")
     p = item_cmd("status", cmd_status, "write the agent's status comment (heartbeat)")
     p.add_argument("--state", choices=STATES, required=True)
     p.add_argument("--done")
@@ -429,6 +449,9 @@ def parser() -> argparse.ArgumentParser:
     p = sp.add_parser("resume", help="lift a pause (manual or quota)")
     p.add_argument("--agent")
     p.set_defaults(fn=cmd_resume)
+    p = sp.add_parser("baseline", help="migration: mark current events as delivered, send nothing")
+    p.add_argument("--agent", required=True)
+    p.set_defaults(fn=cmd_baseline)
     p = sp.add_parser("token", help="print a GitHub App token for the agent")
     p.add_argument("--agent", required=True)
     p.set_defaults(fn=cmd_token)

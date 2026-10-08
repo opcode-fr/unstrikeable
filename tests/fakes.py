@@ -30,6 +30,9 @@ class FakeBoard:
         self.calls.append(("move", ref, column))
         self.set(ref, state=self.columns.get(column, column))
 
+    def set_field(self, ref, name, value):
+        self.calls.append(("set", ref, name, value))
+
     def labels(self, ref, add=(), remove=()):
         self.calls.append(("labels", ref, tuple(add), tuple(remove)))
         it = self._items[ref]

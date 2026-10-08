@@ -253,3 +253,17 @@ def test_a_lesson_can_be_proposed_to_the_team(env):
 
 def test_working_and_blocked_need_no_lesson(env):
     assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "blocked", "--note", "need input"]) == 0
+
+
+def test_baseline_command(env, capsys):
+    home, _ = env
+    assert cli.main(["baseline", "--agent", "kevin"]) == 0
+    assert "1 event(s) marked as delivered" in capsys.readouterr().out
+    assert cli.main(["poll", "--agent", "kevin"]) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_set_field(env):
+    _, board = env
+    assert cli.main(["set", "acme/mkt#1", "Size", "M", "--agent", "kevin"]) == 0
+    assert board.calls[-1] == ("set", "acme/mkt#1", "Size", "M")

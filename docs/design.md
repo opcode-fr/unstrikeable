@@ -96,6 +96,8 @@ agents:                         # identity and hosting, independent of departmen
   didier:
     instance: other-host
     identity: didier-acme
+    limits:                     # per-agent override of the company limits below
+      max_cost_per_day: 10
 
 limits:
   poll_min: 5

@@ -190,3 +190,14 @@ def test_every_shipped_playbook_exists():
     for name in ("dev", "content"):
         for key, path in load_flow(name).playbooks.items():
             assert (SHIPPED / path).exists(), (name, key, path)
+
+
+def test_agent_limits_override_company_limits(tmp_path):
+    write(tmp_path, "config.yml", MINIMAL.replace(
+        "        identity: kevin-acme\n",
+        "        identity: kevin-acme\n        limits:\n          max_cost_per_day: 30\n") +
+        "    limits:\n      max_cost_per_day: 5\n      max_events_per_day: 10\n")
+    co = load_company(tmp_path)
+    assert co.limits_for("kevin")["max_cost_per_day"] == 30
+    assert co.limits_for("kevin")["max_events_per_day"] == 10
+    assert co.limits_for("nobody")["max_cost_per_day"] == 5

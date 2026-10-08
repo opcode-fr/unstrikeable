@@ -146,7 +146,7 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
     today = time.strftime("%Y-%m-%d", time.localtime(now))
     if work.get("day") != today:
         work["day"], work["day_count"] = today, 0
-    limits = co.limits
+    limits = co.limits_for(agent)
     seen = set(work["seen"])
     depts = {d.name: d for d in co.departments_of(agent)}
 
@@ -210,10 +210,20 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
     return _finish(state, work, seen, "", dry_run)
 
 
+def baseline(agent: str, co: Company, boards: dict[str, Board], state: dict) -> int:
+    """Migration: mark every event the agent would get right now as delivered, without sending anything.
+    Run once before the first real poll on a board already worked by another system."""
+    seen = set(state.get("seen") or [])
+    keys = {ev.key for d in co.departments_of(agent) for ev in events_for(agent, d, boards[d.name].items())}
+    state["seen"] = sorted(seen | keys)[-5000:]
+    state["current"] = None
+    return len(keys - seen)
+
+
 def _lease(agent: str, co: Company, boards: dict[str, Board], depts: dict[str, Department], work: dict,
            seen: set, cur: dict, now: int, dry_run: bool) -> str | None:
     """Handle the current task. Returns the text to deliver ('' = wait/nothing), or None if the agent is free."""
-    limits = co.limits
+    limits = co.limits_for(agent)
     memory_task = cur["ref"] == MEMORY_REF
     dept = board = it = None
     if memory_task:

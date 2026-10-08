@@ -125,6 +125,10 @@ class Company:
     runtime: str = ""                                # version pin of the runtime
     memory: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_MEMORY))
 
+    def limits_for(self, agent: str) -> dict[str, Any]:
+        """Company limits, overridden by `agents.<a>.limits` (budgets and cost quotas differ per agent)."""
+        return {**self.limits, **((self.agents.get(agent) or {}).get("limits") or {})}
+
     def departments_of(self, agent: str) -> list[Department]:
         return [d for d in self.departments.values() if agent in d.staff]
 

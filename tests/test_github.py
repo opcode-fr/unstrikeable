@@ -147,3 +147,32 @@ def test_repo_permission_lookup_is_cached_per_login():
     assert board.can_write("acme/app", "bdauzats") and board.can_write("acme/app", "bdauzats")
     assert not board.can_write("acme/app", "random")
     assert len(calls) == 2
+
+
+# ---------------------------------------------------------------- legacy gh-agents markers
+def test_legacy_gha_markers_are_read():
+    n = node(comments={"nodes": [
+        {"databaseId": 1, "author": {"login": "gerard-acme"}, "authorAssociation": "NONE",
+         "body": "spec\n<!-- gha:agent=gerard -->"},
+        {"databaseId": 2, "author": {"login": "gerard-acme"}, "authorAssociation": "NONE",
+         "body": "<!-- gha:agent=gerard -->\n<!-- gha:status agent=gerard state=done since=1 beat=2 -->"}]})
+    cs = parse_issue(n, "Backlog", FLOW, {"gerard-acme"}).comments
+    assert [(c.agent, c.status) for c in cs] == [("gerard", False), ("gerard", True)]
+
+
+def test_set_field_picks_the_option_by_name():
+    calls = []
+    item = {"repository": {"issue": {"id": "I", "state": "OPEN", "projectItems": {"nodes": [{
+        "id": "PI", "project": {"id": "P", "number": 1, "owner": {"login": "acme"},
+                                "field": {"id": "F", "options": [{"id": "s", "name": "S"}, {"id": "m", "name": "M"}]}},
+        "status": None}]}}}}
+
+    def fake_graphql(query, **v):
+        calls.append((query.lstrip()[:8], v))
+        return item
+
+    board = GitHubBoard({"owner": "acme", "number": 1}, FLOW, set(), graphql=fake_graphql)
+    board.set_field("acme/app#12", "Size", "m")
+    mutation = [v for q, v in calls if q.startswith("mutation")][0]
+    assert (mutation["f"], mutation["o"]) == ("F", "m")
+    assert calls[0][1]["f"] == "Size"

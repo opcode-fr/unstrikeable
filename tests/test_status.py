@@ -55,3 +55,8 @@ def test_stale_heartbeat_resumes_once_then_escalates():
 
 def test_closed_or_silenced_item_ends_the_task():
     assert lease_step(cur(), None, T0, LIMITS, gone=True) == "done"
+
+
+def test_legacy_gha_status_is_parsed():
+    body = "<!-- gha:status agent=kevin state=working since=1 beat=5 -->"
+    assert parse_status(body, "kevin") == {"state": "working", "since": 1, "beat": 5}

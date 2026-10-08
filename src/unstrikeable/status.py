@@ -6,7 +6,7 @@ import time
 
 from .model import AGENT_MARK
 
-STATUS_RE = re.compile(r"<!-- uns:status agent=(\S+) state=(\w+) since=(\d+) beat=(\d+) -->")
+STATUS_RE = re.compile(r"<!-- (?:uns|gha):status agent=(\S+) state=(\w+) since=(\d+) beat=(\d+) -->")
 STATES = ("working", "done", "blocked")
 
 

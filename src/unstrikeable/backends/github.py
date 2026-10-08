@@ -13,7 +13,7 @@ from ..model import PR, Comment, Item
 from ..status import parse_status
 
 TRUSTED = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
-AGENT_RE = re.compile(r"<!-- uns:agent=(\S+) -->")
+AGENT_RE = re.compile(r"<!-- (?:uns|gha):agent=(\S+) -->")      # gha = legacy gh-agents markers
 CI = {"SUCCESS": "SUCCESS", "FAILURE": "FAILURE", "ERROR": "FAILURE", "PENDING": "PENDING", "EXPECTED": "PENDING"}
 
 ISSUE_FIELDS = """
@@ -35,11 +35,11 @@ query($login:String!, $num:Int!, $cursor:String) {
 }"""
 
 ISSUE_Q = """
-query($o:String!, $r:String!, $n:Int!) { repository(owner:$o, name:$r) { issue(number:$n) {
+query($o:String!, $r:String!, $n:Int!, $f:String!) { repository(owner:$o, name:$r) { issue(number:$n) {
   id %s
   projectItems(first:20) { nodes { id
     project { id number owner { ... on Organization { login } ... on User { login } }
-      field(name:"Status") { ... on ProjectV2SingleSelectField { id options { id name } } } }
+      field(name:$f) { ... on ProjectV2SingleSelectField { id options { id name } } } }
     status: fieldValueByName(name:"Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }"""
 
 
@@ -87,7 +87,7 @@ def parse_comment(c: dict, bots: set[str], can_write: Callable[[str], bool] | No
     body = c.get("body") or ""
     m = AGENT_RE.search(body) if trusted else None
     return Comment(int(c["databaseId"]), login or "?", trusted, agent=m.group(1) if m else None,
-                   status=trusted and "<!-- uns:status " in body, body=body)
+                   status=trusted and ("<!-- uns:status " in body or "<!-- gha:status " in body), body=body)
 
 
 def parse_issue(n: dict, column: str | None, flow: Flow, bots: set[str],
@@ -155,9 +155,9 @@ class GitHubBoard:
                 return out
             cursor = page["pageInfo"]["endCursor"]
 
-    def _issue(self, ref: str) -> tuple[dict, dict | None]:
+    def _issue(self, ref: str, field: str = "Status") -> tuple[dict, dict | None]:
         o, r, n = split_ref(ref)
-        iss = self.graphql(ISSUE_Q % ISSUE_FIELDS, o=o, r=r, n=n)["repository"]["issue"]
+        iss = self.graphql(ISSUE_Q % ISSUE_FIELDS, o=o, r=r, n=n, f=field)["repository"]["issue"]
         if not iss:
             raise GitHubError("%s not found" % ref)
         mine = next((pi for pi in iss["projectItems"]["nodes"]
@@ -173,13 +173,19 @@ class GitHubBoard:
 
     # ------------------------------------------------------------ write
     def move(self, ref: str, column: str) -> None:
-        iss, pi = self._issue(ref)
+        self.set_field(ref, "Status", column)
+
+    def set_field(self, ref: str, name: str, value: str) -> None:
+        """Set a single-select field of the board (Status, Size, Priority…) by option name."""
+        iss, pi = self._issue(ref, name)
         if not pi:
             raise GitHubError("%s is not on project %s/%d" % (ref, self.owner, self.number))
         field = pi["project"]["field"]
-        opt = next((o for o in field["options"] if o["name"].lower() == column.lower()), None)
+        if not field:
+            raise GitHubError("no single-select field %r on the board" % name)
+        opt = next((o for o in field["options"] if o["name"].lower() == value.lower()), None)
         if not opt:
-            raise GitHubError("no column %r on the board (%s)" % (column, [o["name"] for o in field["options"]]))
+            raise GitHubError("no %r option %r on the board (%s)" % (name, value, [o["name"] for o in field["options"]]))
         self.graphql("""mutation($p:ID!, $i:ID!, $f:ID!, $o:String!) { updateProjectV2ItemFieldValue(input:{
             projectId:$p, itemId:$i, fieldId:$f, value:{ singleSelectOptionId:$o } }) { clientMutationId } }""",
                      p=pi["project"]["id"], i=pi["id"], f=field["id"], o=opt["id"])
