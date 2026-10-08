@@ -2,7 +2,7 @@
 
 > *The company that never goes on strike.*
 
-Status: **draft v0**, to be approved before any runtime code is written.
+Status: **v0, approved**. Implementation in progress.
 
 ## 0. Goals and non-goals
 
@@ -45,26 +45,61 @@ Example:
 
 ```yaml
 runtime: ">=0.1,<0.2"
-forge: {type: github}                     # shared by every department that needs one
+
+forge:                          # shared by every department that needs one
+  type: github
+
 departments:
   marketing:
-    flow: content                         # profile shipped with the runtime
-    board: {type: github-projects, owner: acme, number: 2}
-    repos: [acme/marketing]
-    staff: {kevin: [planner, writer]}     # who works here, and with which roles of the flow
+    flow: content               # profile shipped with the runtime
+    board:
+      type: github-projects
+      owner: acme
+      number: 2
+    repos:
+      - acme/marketing
+    staff:                      # who works here, and with which roles of the flow
+      kevin:
+        - planner
+        - writer
     overrides:
-      columns: {approved: "Ready to publish"}
-      labels: [channel:x, channel:linkedin, type:release]
+      columns:
+        approved: Ready to publish
+      labels:
+        - channel:x
+        - channel:linkedin
+        - type:release
+
   rnd:
     flow: dev
-    board: {type: github-projects, owner: acme, number: 1}
-    repos: [acme/product, acme/lab]
-    staff: {gerard: [pm, dev], didier: [review]}
-agents:                                   # identity and hosting, independent of departments
-  kevin:  {instance: mac-mini, identity: kevin-acme}
-  gerard: {instance: mac-mini, identity: gerard-acme}
-  didier: {instance: other-host, identity: didier-acme}
-limits: {poll_min: 5, max_events_per_day: 10}
+    board:
+      type: github-projects
+      owner: acme
+      number: 1
+    repos:
+      - acme/product
+      - acme/lab
+    staff:
+      gerard:
+        - pm
+        - dev
+      didier:
+        - review
+
+agents:                         # identity and hosting, independent of departments
+  kevin:
+    instance: mac-mini
+    identity: kevin-acme
+  gerard:
+    instance: mac-mini
+    identity: gerard-acme
+  didier:
+    instance: other-host
+    identity: didier-acme
+
+limits:
+  poll_min: 5
+  max_events_per_day: 10
 ```
 
 Vocabulary:
@@ -118,20 +153,47 @@ A profile declares **states, roles, triggers and playbooks**. Shipped profiles (
 
 ```yaml
 # flows/content.yml (shipped)
-states:                       # order = column order; logical key -> column name
-  - {key: backlog,  column: Ideas}
-  - {key: ready,    column: Ready to write}
-  - {key: doing,    column: Drafting}
-  - {key: review,   column: In review}
-  - {key: approved, column: Ready to publish}
-  - {key: done,     column: Published}
+states:                         # order = column order
+  - key: backlog                # logical key, used by agents and the CLI
+    column: Ideas               # column name on the board
+  - key: ready
+    column: Ready to write
+  - key: doing
+    column: Drafting
+  - key: review
+    column: In review
+  - key: approved
+    column: Ready to publish
+  - key: done
+    column: Published
+
 roles:
-  planner:  {on: {backlog: [item_new, human_comment], ready: [human_comment]}}
-  writer:   {label: "writer:{agent}",   on: {ready: [assigned], doing: [human_comment], approved: [pr_conflict, human_comment]}}
-  reviewer: {label: "reviewer:{agent}", human: true}
-playbooks:                    # instructions handed to the agent, per (role, trigger)
+  planner:
+    on:                         # state -> triggers this role reacts to
+      backlog:
+        - item_new
+        - human_comment
+      ready:
+        - human_comment
+  writer:
+    label: "writer:{agent}"
+    on:
+      ready:
+        - assigned
+      doing:
+        - human_comment
+      approved:
+        - pr_conflict
+        - human_comment
+  reviewer:
+    label: "reviewer:{agent}"
+    human: true
+
+playbooks:                      # instructions handed to the agent, per role.trigger
   writer.assigned: playbooks/content/write.md
-artifact: {path: "{yyyy}/{mm}/{channel}-{dd}-{slug}.md"}
+
+artifact:
+  path: "{yyyy}/{mm}/{channel}-{dd}-{slug}.md"
 ```
 
 - Agents and the CLI speak **logical keys** (`uns move <ref> review`), never column names.
@@ -143,7 +205,12 @@ artifact: {path: "{yyyy}/{mm}/{channel}-{dd}-{slug}.md"}
   the same answer from the same board, with no coordination. On take, the runtime swaps the pool label for the
   named one (`to-write` → `writer:kevin`) so the board shows who works on what. If two agents still end up on
   the same item (race between polls), the existing rule applies: two named labels → `needs:human`.
-  A flow may declare both forms for the same role (`label: ["writer:{agent}", "to-write"]`).
+  A flow may declare both forms for the same role:
+  ```yaml
+  label:
+    - "writer:{agent}"
+    - to-write
+  ```
 - System labels (`needs:human`, `agent:pause`, `agent:lost`,
   `spec:question`) are fixed and shared by every flow.
 
