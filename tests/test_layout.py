@@ -37,3 +37,9 @@ def test_expected_labels_cover_staff_system_and_extra_labels():
     names = set(expected_labels(d))
     assert {"writer:kevin", "spec:question", "needs:human", "agent:pause", "agent:lost", "channel:x"} <= names
     assert not any(n.startswith("planner") for n in names)          # unlabelled role
+
+
+def test_prune_drops_columns_outside_the_flow():
+    have = [{"id": "a", "name": "Todo", "color": "GRAY", "description": ""}]
+    opts, actions = plan_columns(have, ["Ideas"], prune=True)
+    assert [o["name"] for o in opts] == ["Ideas"] and "- column 'Todo' (pruned)" in actions

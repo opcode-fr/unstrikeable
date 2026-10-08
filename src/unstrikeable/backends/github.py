@@ -185,14 +185,20 @@ class GitHubBoard:
             self.comment(ref, body)
 
     # ------------------------------------------------------------ layout
-    def ensure_layout(self, dept: Department, apply: bool = False) -> list[str]:
+    def ensure_layout(self, dept: Department, apply: bool = False, prune: bool = False) -> list[str]:
         """Columns of the Status field in flow order, and the department's labels in each repo.
-        Returns the plan (one line per action); writes only when apply=True. Never deletes anything."""
+        Returns the plan (one line per action); writes only when apply=True. Deletes columns only with prune,
+        and only when no open item sits outside the flow's columns (its status would be lost)."""
+        if prune and apply:
+            lost = [i for i in self.items() if i.state is None]
+            if lost:
+                raise GitHubError("prune refused: %d open item(s) sit on columns outside the flow (%s)" % (
+                    len(lost), ", ".join(i.ref for i in lost[:5])))
         d = self.graphql("""query($l:String!, $n:Int!) { %s(login:$l) { projectV2(number:$n) { title
             field(name:"Status") { ... on ProjectV2SingleSelectField { id options { id name color description } } }
             } } }""" % self.kind, l=self.owner, n=self.number)
         field = d[self.kind]["projectV2"]["field"]
-        opts, plan = plan_columns(field["options"], [s.column for s in dept.flow.states])
+        opts, plan = plan_columns(field["options"], [s.column for s in dept.flow.states], prune)
         if opts is not None and apply:
             self.graphql("""mutation($f:ID!, $o:[ProjectV2SingleSelectFieldOptionInput!]) {
                 updateProjectV2Field(input:{fieldId:$f, singleSelectOptions:$o}) { clientMutationId } }""",

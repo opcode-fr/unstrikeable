@@ -111,3 +111,15 @@ def test_layout_dry_run_plans_without_writing():
     assert writes == []
     board.ensure_layout(d, apply=True)
     assert writes and writes[0]["f"] == "F"
+
+
+def test_prune_is_refused_while_items_sit_outside_the_flow():
+    import pytest
+    from unstrikeable.backends.github import GitHubError
+    from unstrikeable.config import Department
+    flow = load_flow("content")
+    d = Department("marketing", flow, {"owner": "acme", "number": 2}, ["acme/mkt"], {})
+    board = GitHubBoard(d.board, flow, set(), graphql=lambda q, **v: {}, run=lambda a, stdin=None: "[]")
+    board.items = lambda: [parse_issue(node(), "Todo", flow, set())]
+    with pytest.raises(GitHubError, match="1 open item"):
+        board.ensure_layout(d, apply=True, prune=True)

@@ -28,14 +28,17 @@ def expected_labels(dept: Department) -> dict[str, tuple[str, str]]:
     return want
 
 
-def plan_columns(have: list[dict], want: list[str]) -> tuple[list[dict] | None, list[str]]:
+def plan_columns(have: list[dict], want: list[str], prune: bool = False) -> tuple[list[dict] | None, list[str]]:
     """New Status options (None = nothing to do) and human-readable actions.
     Existing option ids are kept: items on those columns keep their status."""
     by_name = {o["name"].lower(): o for o in have}
     wanted = {w.lower() for w in want}
     actions = ["+ column %r" % w for w in want if w.lower() not in by_name]
     extra = [o for o in have if o["name"].lower() not in wanted]
-    actions += ["! column %r not in the flow (kept)" % o["name"] for o in extra]
+    if prune:
+        actions += ["- column %r (pruned)" % o["name"] for o in extra]
+    else:
+        actions += ["! column %r not in the flow (kept)" % o["name"] for o in extra]
     present = [o["name"].lower() for o in have if o["name"].lower() in wanted]
     if present != [w.lower() for w in want if w.lower() in by_name]:
         actions.append("~ reorder columns")
@@ -46,6 +49,7 @@ def plan_columns(have: list[dict], want: list[str]) -> tuple[list[dict] | None, 
         o = by_name.get(w.lower())
         opts.append({"id": o["id"], "name": o["name"], "color": o["color"], "description": o.get("description") or ""}
                     if o else {"name": w, "color": "GRAY", "description": ""})
-    opts += [{"id": o["id"], "name": o["name"], "color": o["color"], "description": o.get("description") or ""}
-             for o in extra]
+    if not prune:
+        opts += [{"id": o["id"], "name": o["name"], "color": o["color"], "description": o.get("description") or ""}
+                 for o in extra]
     return opts, actions

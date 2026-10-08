@@ -230,7 +230,7 @@ def cmd_layout(a: argparse.Namespace) -> None:
     depts = [co.departments[a.department]] if a.department else list(co.departments.values())
     print("mode: %s" % ("APPLY" if a.apply else "dry-run (nothing is changed)"))
     for d in depts:
-        plan = make_board(co, d, None).ensure_layout(d, apply=a.apply)
+        plan = make_board(co, d, None).ensure_layout(d, apply=a.apply, prune=a.prune)
         print("## %s" % d.name)
         print("\n".join("  " + line for line in plan) if plan else "  = OK")
 
@@ -362,6 +362,7 @@ def parser() -> argparse.ArgumentParser:
     p = sp.add_parser("layout", help="create the columns and labels the departments need (dry-run by default)")
     p.add_argument("--department")
     p.add_argument("--apply", action="store_true")
+    p.add_argument("--prune", action="store_true", help="also remove columns outside the flow (refused if items sit there)")
     p.set_defaults(fn=cmd_layout)
     p = sp.add_parser("hire", help="add an agent to the company from a preset (--list to see them)")
     p.add_argument("preset", nargs="?")
