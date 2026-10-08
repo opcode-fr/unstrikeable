@@ -178,7 +178,22 @@ def cmd_move(a: argparse.Namespace) -> None:
     print("%s -> %s (%s)" % (a.ref, a.state, dept.flow.column(a.state)))
 
 
+NOTHING_LEARNED = {"none", "nothing", "-"}
+
+
 def cmd_status(a: argparse.Namespace) -> None:
+    if a.state == "done" and not (a.learned or "").strip():
+        raise UsageError('closing a task needs a lesson: --learned "<rule> because <reason>" (or --learned none)')
+    _write_status(a)
+    lesson = (a.learned or "").strip()
+    if a.state == "done" and lesson.lower() not in NOTHING_LEARNED:
+        co = load(load_local())
+        path = _remember(co, a.agent, "Learned on %s: %s" % (a.ref, lesson[:50]),
+                         "%s\n\nSource: %s" % (lesson, a.ref), share=a.share_learned)
+        print("lesson %s %s" % ("proposed to the team" if a.share_learned else "noted", path.relative_to(co.root)))
+
+
+def _write_status(a: argparse.Namespace) -> None:
     if a.ref == MEMORY_REF:                       # curation task: no board item, the status lives in the state
         state = read_state(a.agent)
         prev = state.get("memory_status") or {}
@@ -282,20 +297,25 @@ def cmd_update(a: argparse.Namespace) -> None:
     print(admin.update(local, load(local).runtime))
 
 
+def _remember(co: Company, agent: str, title: str, body: str, share: bool) -> Path:
+    try:
+        path = write_entry(co.root, agent, title, body, share=share)
+    except ValueError as e:
+        raise UsageError(str(e)) from e
+    if (co.root / ".git").exists():
+        owner = next((d.board.get("owner") for d in co.departments_of(agent)), "")
+        token = agent_token(agent, owner) if owner else None
+        env = {**os.environ, "GH_TOKEN": token} if token else None     # push as the agent's App
+        commit_and_push(co.root, [path], "memory(%s): %s" % (agent, title), env=env)
+    return path
+
+
 def cmd_remember(a: argparse.Namespace) -> None:
     co = load(load_local())
     body = Path(a.body_file).read_text() if a.body_file else (a.body or "")
     if not body.strip():
         raise UsageError("empty note (use --body or --body-file)")
-    try:
-        path = write_entry(co.root, a.agent, a.title, body, share=a.share)
-    except ValueError as e:
-        raise UsageError(str(e)) from e
-    if (co.root / ".git").exists():
-        owner = next((d.board.get("owner") for d in co.departments_of(a.agent)), "")
-        token = agent_token(a.agent, owner) if owner else None
-        env = {**os.environ, "GH_TOKEN": token} if token else None     # push as the agent's App
-        commit_and_push(co.root, [path], "memory(%s): %s" % (a.agent, a.title), env=env)
+    path = _remember(co, a.agent, a.title, body, a.share)
     print("%s %s" % ("proposed to the team" if a.share else "noted", path.relative_to(co.root)))
 
 
@@ -357,6 +377,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--done")
     p.add_argument("--todo")
     p.add_argument("--note")
+    p.add_argument("--learned", help='required with --state done: "<rule> because <reason>", or "none"')
+    p.add_argument("--share-learned", action="store_true", help="propose the lesson to the team (curator)")
     p = item_cmd("comment", cmd_comment, "comment on an item, signed by the agent")
     p.add_argument("--body")
     p.add_argument("--body-file")

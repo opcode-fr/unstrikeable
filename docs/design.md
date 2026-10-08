@@ -326,6 +326,9 @@ Folders are split by **lifecycle**, not by owner, so the curator scans one place
    (`<yyyy-mm-dd>-<slug>.md`), committed straight to the config repo's default branch
    (unique names → no conflict possible). An agent may edit or delete its own `agents/<self>/` files to keep them tidy.
 2. **Promotion** is explicit: to share a private note, the agent writes a new entry in `inbox/<self>/`.
+   **Mandatory lesson at closing**: `uns status … --state done` requires `--learned "<rule> because <reason>"`
+   (stored in the agent's private memory, or in the inbox with `--share-learned`) or `--learned none`.
+   Without it, agents skip memory on short tasks and the same pitfalls come back.
 3. **`curator` role** (an existing agent may hold it): triggered when the inbox exceeds N entries or once a day,
    it consolidates into `memory/shared/*.md` through **a PR** and removes the processed entries.
 4. **Mandatory human review** of that PR: memory read by every agent is an injection vector

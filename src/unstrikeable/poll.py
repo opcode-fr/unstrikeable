@@ -61,8 +61,9 @@ def _context(co: Company, agent: str) -> list[str]:
 def _footer(ref: str, agent: str) -> list[str]:
     return ["", "Learned something reusable? `uns remember --agent %s --title \"…\" --body-file <md>` "
                 "(add `--share` to propose it to the team). Never a secret." % agent,
-            "Start with `uns status %s --agent %s --state working --todo \"…\"`, "
-            "and ALWAYS finish with `--state done` (or `blocked`)." % (ref, agent)]
+            "Start with `uns status %s --agent %s --state working --todo \"…\"`, and ALWAYS finish with "
+            "`--state done --learned \"<rule> because <reason>\"` (or `--learned none`), or `--state blocked`."
+            % (ref, agent)]
 
 
 def render(co: Company, dept: Department, ev: Event | None, item: Item, agent: str,

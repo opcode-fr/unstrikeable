@@ -12,4 +12,4 @@ You are the curator. Team members proposed knowledge in `memory/inbox/`; turn it
 4. Keep `memory/shared/` under its size cap: condense, do not pile up.
 5. Open a PR titled `memory: curate <n> entries`, describing what was kept, merged, dropped and rejected.
    A human reviews and merges it: never merge it yourself.
-6. `uns status memory --agent <you> --state done --done "PR <url>"`.
+6. `uns status memory --agent <you> --state done --done "PR <url>" --learned none` (or a lesson about curating).

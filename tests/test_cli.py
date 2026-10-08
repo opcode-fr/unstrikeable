@@ -171,7 +171,7 @@ def test_remember_refuses_secrets(env, capsys):
 
 def test_status_memory_is_kept_locally(env):
     home, _ = env
-    assert cli.main(["status", "memory", "--agent", "kevin", "--state", "done"]) == 0
+    assert cli.main(["status", "memory", "--agent", "kevin", "--state", "done", "--learned", "none"]) == 0
     assert _state(home)["memory_status"]["state"] == "done"
 
 
@@ -217,3 +217,39 @@ def test_token_of_an_app_not_installed_is_a_clear_error(env, monkeypatch, capsys
     monkeypatch.setattr(cli.urllib.request, "urlopen", not_found)
     assert cli.main(["token", "--agent", "kevin"]) == 2
     assert "is the App installed on acme?" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------- mandatory lesson at closing
+def _notes(home, folder="agents"):
+    return list((home.parent / "company" / "memory" / folder / "kevin").glob("*.md"))
+
+
+def test_done_requires_a_lesson(env, capsys):
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done"]) == 2
+    assert "--learned" in capsys.readouterr().err
+
+
+def test_done_with_nothing_learned_writes_no_memory(env):
+    home, _ = env
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--learned", "none"]) == 0
+    assert _notes(home) == []
+
+
+def test_done_with_a_lesson_stores_it_in_private_memory(env):
+    home, board = env
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done",
+                     "--learned", "0.857 vs 0.753 is 10.4 points, not 12: name the model"]) == 0
+    notes = _notes(home)
+    assert len(notes) == 1 and "10.4 points" in notes[0].read_text() and "acme/mkt#1" in notes[0].read_text()
+    assert [c for c in board.item("acme/mkt#1").comments if c.status]
+
+
+def test_a_lesson_can_be_proposed_to_the_team(env):
+    home, _ = env
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done",
+                     "--learned", "AG News is the only clean comparison", "--share-learned"]) == 0
+    assert _notes(home, "inbox") and not _notes(home)
+
+
+def test_working_and_blocked_need_no_lesson(env):
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "blocked", "--note", "need input"]) == 0
