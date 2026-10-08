@@ -37,7 +37,8 @@ agents/<agent>.md         # role, tone, capabilities, agent-specific instruction
 skills/                   # team skills (same name as a runtime skill = replaces it)
 memory/
   shared/*.md             # curated, human-approved, read by every agent
-  inbox/<agent>/*.md      # raw entries, one file per entry (see §8)
+  inbox/<agent>/*.md      # proposals to share, consumed by the curator (see §8)
+  agents/<agent>/*.md     # the agent's own long-term notes, never loaded by others
 ```
 
 Example:
@@ -96,7 +97,7 @@ Gerard is a senior ML engineer. Terse, measures before claiming.
 
 ### What an agent receives with each event
 
-`culture.md` → `agents/<self>.md` → `memory/shared/` → flow playbook for (role, trigger) → the event itself.
+`culture.md` → `agents/<self>.md` → `memory/shared/` → `memory/agents/<self>/` → flow playbook for (role, trigger) → the event itself.
 Runtime guardrails come last and cannot be overridden by anything above them.
 
 ## 3. Flow (YAML profile)
@@ -188,21 +189,32 @@ The runtime **emits events** (text + JSON) and does not care who handles them. A
 Foundation skills shipped: `unstrikeable-agent` (handling an event, the CLI, status) and
 `unstrikeable-admin` (setup, align, adding an agent, updates). Flow playbooks plug into them.
 
-## 8. Shared memory
+## 8. Memory
 
-Goal: what one agent learns benefits the others, without git conflicts or poisoning.
+Goal: each agent keeps what it learns, and what is useful to others gets shared, without git conflicts or poisoning.
 
-1. **Append-only writes**: `memory/inbox/<agent>/<yyyy-mm-dd>-<slug>.md`, one file per entry, committed straight
-   to the config repo's default branch (unique names → no conflict possible).
-2. **`curator` role** (an existing agent may hold it): triggered when the inbox exceeds N entries or once a day,
+Folders are split by **lifecycle**, not by owner, so the curator scans one place and write rights stay simple:
+
+| Folder | What | Written by | Read by | Curated |
+|---|---|---|---|---|
+| `memory/agents/<agent>/` | the agent's own long-term notes | that agent | that agent | no |
+| `memory/inbox/<agent>/` | proposals to share | that agent | that agent, curator | yes, then removed |
+| `memory/shared/` | team knowledge | curator (via PR) | every agent | — |
+
+1. **Append-only writes** in `agents/<self>/` and `inbox/<self>/`: one file per entry
+   (`<yyyy-mm-dd>-<slug>.md`), committed straight to the config repo's default branch
+   (unique names → no conflict possible). An agent may edit or delete its own `agents/<self>/` files to keep them tidy.
+2. **Promotion** is explicit: to share a private note, the agent writes a new entry in `inbox/<self>/`.
+3. **`curator` role** (an existing agent may hold it): triggered when the inbox exceeds N entries or once a day,
    it consolidates into `memory/shared/*.md` through **a PR** and removes the processed entries.
-3. **Mandatory human review** of that PR: memory read by every agent is an injection vector
+4. **Mandatory human review** of that PR: memory read by every agent is an injection vector
    (an agent that read a booby-trapped issue could contaminate the whole team). No auto-merge.
-4. **Reads**: each agent reads `memory/shared/` plus its own inbox, never another agent's inbox.
-5. **Content**: reusable facts and procedures, no session logs, no secrets.
-   `shared/` has a size cap (TBD): the curator condenses instead of piling up.
+5. **"Private" means not loaded by other agents, not secret**: anyone with read access to the config repo can read it.
+   Hence no secrets, no credentials, no personal data anywhere under `memory/`.
+6. **Content**: reusable facts and procedures, no session logs. Each folder has a size cap (TBD); above it,
+   the owner (or the curator for `shared/`) condenses instead of piling up.
 
-The only exception to "no agent pushes to a default branch": its own `memory/inbox/<self>/` in the config repo.
+The only exception to "no agent pushes to a default branch": `memory/agents/<self>/` and `memory/inbox/<self>/` in the config repo.
 
 ## 9. Distribution and updates
 
@@ -215,7 +227,7 @@ The only exception to "no agent pushes to a default branch": its own `memory/inb
 
 1. **v0.1**: core + GitHub backends + `dev` and `content` profiles + Hermes adapter + tests.
    First pilot: a content board run by one writer agent (Kevin).
-2. **v0.2**: shared memory + curator.
+2. **v0.2**: memory (private + shared) + curator.
 3. Existing agent boards are migrated later, once v0.1 has run in production.
 
 ## 11. Decisions
