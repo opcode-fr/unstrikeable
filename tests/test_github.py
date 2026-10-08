@@ -83,3 +83,31 @@ def test_items_pages_through_the_board_and_skips_closed_issues_and_drafts():
     board = GitHubBoard({"owner": "acme", "number": 1}, FLOW, BOTS, graphql=fake_graphql)
     assert [(i.number, i.state) for i in board.items()] == [(12, "ready"), (14, "backlog")]
     assert calls == [None, "c1"]
+
+
+def test_layout_dry_run_plans_without_writing():
+    from unstrikeable.config import Department
+    status = {"organization": {"projectV2": {"title": "Mkt", "field": {"id": "F", "options": [
+        {"id": "o1", "name": "Ideas", "color": "GRAY", "description": ""}]}}}}
+    writes = []
+
+    def fake_graphql(query, **v):
+        if query.lstrip().startswith("mutation"):
+            writes.append(v)
+        return status
+
+    def fake_run(args, stdin=None):
+        if args[:2] == ["label", "list"]:
+            return '[{"name": "needs:human", "color": "d93f0b", "description": ""}]'
+        writes.append(args)
+        return ""
+
+    flow = load_flow("content")
+    d = Department("marketing", flow, {"owner": "acme", "number": 2}, ["acme/mkt"], {"kevin": ["writer"]})
+    board = GitHubBoard(d.board, flow, set(), graphql=fake_graphql, run=fake_run)
+    plan = board.ensure_layout(d, apply=False)
+    assert "+ column 'Drafting'" in plan and "acme/mkt: + label writer:kevin" in plan
+    assert "acme/mkt: + label needs:human" not in plan
+    assert writes == []
+    board.ensure_layout(d, apply=True)
+    assert writes and writes[0]["f"] == "F"

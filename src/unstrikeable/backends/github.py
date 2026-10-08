@@ -7,7 +7,8 @@ import re
 import subprocess
 from typing import Any, Callable, Sequence
 
-from ..config import Flow
+from ..config import Department, Flow
+from ..layout import expected_labels, plan_columns
 from ..model import PR, Comment, Item
 from ..status import parse_status
 
@@ -182,3 +183,28 @@ class GitHubBoard:
                      stdin=json.dumps({"body": body}))
         else:
             self.comment(ref, body)
+
+    # ------------------------------------------------------------ layout
+    def ensure_layout(self, dept: Department, apply: bool = False) -> list[str]:
+        """Columns of the Status field in flow order, and the department's labels in each repo.
+        Returns the plan (one line per action); writes only when apply=True. Never deletes anything."""
+        d = self.graphql("""query($l:String!, $n:Int!) { %s(login:$l) { projectV2(number:$n) { title
+            field(name:"Status") { ... on ProjectV2SingleSelectField { id options { id name color description } } }
+            } } }""" % self.kind, l=self.owner, n=self.number)
+        field = d[self.kind]["projectV2"]["field"]
+        opts, plan = plan_columns(field["options"], [s.column for s in dept.flow.states])
+        if opts is not None and apply:
+            self.graphql("""mutation($f:ID!, $o:[ProjectV2SingleSelectFieldOptionInput!]) {
+                updateProjectV2Field(input:{fieldId:$f, singleSelectOptions:$o}) { clientMutationId } }""",
+                         f=field["id"], o=opts)
+        want = expected_labels(dept)
+        for repo in dept.repos:
+            have = {l["name"] for l in json.loads(self.run(
+                ["label", "list", "-R", repo, "--limit", "500", "--json", "name,color,description"]))}
+            for name, (color, desc) in want.items():
+                if name in have:
+                    continue
+                plan.append("%s: + label %s" % (repo, name))
+                if apply:
+                    self.run(["label", "create", name, "-R", repo, "--color", color, "--description", desc])
+        return plan

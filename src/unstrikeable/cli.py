@@ -192,6 +192,16 @@ def cmd_check(a: argparse.Namespace) -> None:
             len(culture.read_text().split()), CULTURE_MAX_WORDS))
 
 
+def cmd_layout(a: argparse.Namespace) -> None:
+    co = load(load_local())
+    depts = [co.departments[a.department]] if a.department else list(co.departments.values())
+    print("mode: %s" % ("APPLY" if a.apply else "dry-run (nothing is changed)"))
+    for d in depts:
+        plan = make_board(co, d, None).ensure_layout(d, apply=a.apply)
+        print("## %s" % d.name)
+        print("\n".join("  " + line for line in plan) if plan else "  = OK")
+
+
 def cmd_token(a: argparse.Namespace) -> None:
     co = load(load_local())
     owner = next((d.board.get("owner") for d in co.departments_of(a.agent)), None)
@@ -235,6 +245,10 @@ def parser() -> argparse.ArgumentParser:
 
     p = sp.add_parser("check", help="validate config.yml and print the departments")
     p.set_defaults(fn=cmd_check)
+    p = sp.add_parser("layout", help="create the columns and labels the departments need (dry-run by default)")
+    p.add_argument("--department")
+    p.add_argument("--apply", action="store_true")
+    p.set_defaults(fn=cmd_layout)
     p = sp.add_parser("token", help="print a GitHub App token for the agent")
     p.add_argument("--agent", required=True)
     p.set_defaults(fn=cmd_token)

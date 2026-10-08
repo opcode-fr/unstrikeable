@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Protocol, Sequence
 
+from ..config import Department
 from ..model import Item
 
 
@@ -23,4 +24,8 @@ class Board(Protocol):
 
     def upsert_status(self, ref: str, agent: str, body: str) -> None:
         """Create or edit in place the single status comment of `agent` on the item."""
+        ...
+
+    def ensure_layout(self, dept: Department, apply: bool = False) -> list[str]:
+        """Plan (and with apply, create) the columns and labels the department needs. Never deletes."""
         ...

@@ -30,8 +30,7 @@ roles:
       approved:
         - pr_conflict
         - human_comment
-  reviewer:
-    label: "reviewer:{agent}"
+  reviewer:                     # you: review the PR, publish, then merge
     human: true
 
 playbooks:

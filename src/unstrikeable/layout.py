@@ -16,8 +16,6 @@ EXTRA_COLOR = "c5def5"
 def expected_labels(dept: Department) -> dict[str, tuple[str, str]]:
     want: dict[str, tuple[str, str]] = {}
     for rname, role in dept.flow.roles.items():
-        if role.human:
-            continue
         for agent in dept.staff_with(rname):
             label = role.named_label(agent)
             if label:

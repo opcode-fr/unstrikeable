@@ -186,7 +186,6 @@ roles:
         - pr_conflict
         - human_comment
   reviewer:
-    label: "reviewer:{agent}"
     human: true
 
 playbooks:                      # instructions handed to the agent, per role.trigger
