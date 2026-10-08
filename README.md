@@ -8,8 +8,8 @@ and guardrails built in (one task at a time, budgets, heartbeat, kill switches).
 - Design: [docs/design.md](docs/design.md)
 - Flows shipped: [`dev`](src/unstrikeable/flows/dev.yml) (spec → code → review → merge) and
   [`content`](src/unstrikeable/flows/content.yml) (idea → brief → draft → review → publish).
-- Skills: [`unstrikeable-agent`](skills/unstrikeable-agent/SKILL.md) (agents) and
-  [`unstrikeable-admin`](skills/unstrikeable-admin/SKILL.md) (setup and operations).
+- Skills: [`unstrikeable-agent`](src/unstrikeable/skills/unstrikeable-agent/SKILL.md) (agents) and
+  [`unstrikeable-admin`](src/unstrikeable/skills/unstrikeable-admin/SKILL.md) (setup and operations).
 
 ## Quick start
 
