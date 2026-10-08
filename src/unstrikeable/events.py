@@ -92,7 +92,7 @@ def _spoke(item: Item, me: str) -> bool:
 
 
 def _last_id(item: Item) -> int:
-    return max((c.id for c in item.comments), default=0)
+    return max((c.id for c in item.comments if not c.status), default=0)
 
 
 # ---------------------------------------------------------------- main
