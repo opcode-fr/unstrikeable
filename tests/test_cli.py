@@ -201,3 +201,19 @@ def test_digest_shows_paused_agents_and_cost(env, capsys):
     assert cli.main(["digest"]) == 0
     out = capsys.readouterr().out
     assert "⏸️ paused: daily cost quota reached" in out and "$7.50 today" in out
+
+
+def test_token_of_an_app_not_installed_is_a_clear_error(env, monkeypatch, capsys, tmp_path):
+    import subprocess
+    import urllib.error
+    home, _ = env
+    key = tmp_path / "k.pem"
+    subprocess.run(["openssl", "genrsa", "-out", str(key), "2048"], check=True, capture_output=True)
+    (home / "local.yml").write_text((home / "local.yml").read_text().replace(
+        "  kevin: {}", "  kevin: {app_id: 1, app_key: %s}" % key))
+
+    def not_found(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+    monkeypatch.setattr(cli.urllib.request, "urlopen", not_found)
+    assert cli.main(["token", "--agent", "kevin"]) == 2
+    assert "is the App installed on acme?" in capsys.readouterr().err

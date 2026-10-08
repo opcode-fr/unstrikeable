@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -82,8 +83,11 @@ def app_token(app: dict, owner: str) -> str:
         with urllib.request.urlopen(req, timeout=20) as r:
             return json.loads(r.read())
 
-    inst = app.get("installation_id") or call("GET", "https://api.github.com/orgs/%s/installation" % owner)["id"]
-    tok = call("POST", "https://api.github.com/app/installations/%s/access_tokens" % inst)
+    try:
+        inst = app.get("installation_id") or call("GET", "https://api.github.com/orgs/%s/installation" % owner)["id"]
+        tok = call("POST", "https://api.github.com/app/installations/%s/access_tokens" % inst)
+    except urllib.error.HTTPError as e:
+        raise UsageError("GitHub App %s: HTTP %d (is the App installed on %s?)" % (app["app_id"], e.code, owner)) from e
     cache.parent.mkdir(parents=True, exist_ok=True)
     exp = time.mktime(time.strptime(tok["expires_at"], "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
     cache.write_text(json.dumps({"token": tok["token"], "exp": exp}))
