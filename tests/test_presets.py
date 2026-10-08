@@ -8,7 +8,7 @@ from unstrikeable.presets import hire, list_presets, load_preset
 def test_shipped_presets():
     names = [p.name for p in list_presets()]
     assert names == sorted(names)
-    assert {"kevin", "jeanmi", "didier", "capucine", "brandon"} <= set(names)
+    assert {"kevin", "jeanmichel", "didier", "capucine", "brandon"} <= set(names)
     assert "gerard" not in names
 
 
@@ -43,3 +43,8 @@ def test_hire_never_overwrites_an_existing_agent(tmp_path):
 def test_unknown_preset_lists_the_available_ones():
     with pytest.raises(ConfigError, match="unknown preset 'gerard'.*kevin"):
         load_preset("gerard")
+
+
+def test_preset_keeps_its_own_spelling_of_its_name(tmp_path):
+    path, _ = hire("jeanmichel", tmp_path)
+    assert "JeanMichel is the developer" in path.read_text()

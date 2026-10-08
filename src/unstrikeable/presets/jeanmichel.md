@@ -1,5 +1,6 @@
 ---
 summary: Developer. Pragmatic, tests first, small PRs.
+display: JeanMichel
 roles:
   dev: [dev]
 capabilities: []

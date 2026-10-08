@@ -9,7 +9,7 @@ and guardrails built in (one task at a time, budgets, heartbeat, kill switches).
 - Flows shipped: [`dev`](src/unstrikeable/flows/dev.yml) (spec → code → review → merge) and
   [`content`](src/unstrikeable/flows/content.yml) (idea → brief → draft → review → publish).
 - Agent presets: Kevin (community manager), Brandon (growth hacker), Capucine (project manager),
-  Jeanmi (developer), Didier (reviewer): `uns hire --list`.
+  JeanMichel (developer), Didier (reviewer): `uns hire --list`.
 - Skills: [`unstrikeable-agent`](src/unstrikeable/skills/unstrikeable-agent/SKILL.md) (agents) and
   [`unstrikeable-admin`](src/unstrikeable/skills/unstrikeable-admin/SKILL.md) (setup and operations).
 

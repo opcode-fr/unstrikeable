@@ -6,7 +6,7 @@ from unstrikeable.model import PR, Comment, Item
 
 
 def dept(flow="dev", staff=None):
-    staff = staff or {"gerard": ["pm", "dev"], "jeanmi": ["dev"], "didier": ["review"]}
+    staff = staff or {"gerard": ["pm", "dev"], "jeanmichel": ["dev"], "didier": ["review"]}
     return Department("rnd", load_flow(flow), {}, ["acme/app"], staff)
 
 
@@ -75,80 +75,80 @@ def test_only_first_staff_member_holding_an_unlabelled_role_acts():
 
 # ---------------------------------------------------------------- named assignment
 def test_assigned_dev_takes_ready_item():
-    assert kinds("jeanmi", [item("ready", ["dev:jeanmi"])]) == [("dev", "assigned")]
+    assert kinds("jeanmichel", [item("ready", ["dev:jeanmichel"])]) == [("dev", "assigned")]
 
 
 def test_other_dev_ignores_it():
-    assert kinds("gerard", [item("ready", ["dev:jeanmi"])]) == []
+    assert kinds("gerard", [item("ready", ["dev:jeanmichel"])]) == []
 
 
 def test_blocked_item_is_not_taken():
-    assert kinds("jeanmi", [item("ready", ["dev:jeanmi"], blocked=1)]) == []
+    assert kinds("jeanmichel", [item("ready", ["dev:jeanmichel"], blocked=1)]) == []
 
 
 def test_busy_agent_does_not_take_new_work():
-    items = [item("doing", ["dev:jeanmi"], n=1), item("ready", ["dev:jeanmi"], n=2)]
-    assert kinds("jeanmi", items) == []
+    items = [item("doing", ["dev:jeanmichel"], n=1), item("ready", ["dev:jeanmichel"], n=2)]
+    assert kinds("jeanmichel", items) == []
 
 
 def test_two_named_assignees_is_ambiguous_and_ignored():
-    assert kinds("jeanmi", [item("ready", ["dev:jeanmi", "dev:gerard"])]) == []
+    assert kinds("jeanmichel", [item("ready", ["dev:jeanmichel", "dev:gerard"])]) == []
 
 
 def test_blocking_labels_silence_the_item():
     for label in ("agent:pause", "needs:human", "agent:lost"):
-        assert kinds("jeanmi", [item("ready", ["dev:jeanmi", label])]) == []
+        assert kinds("jeanmichel", [item("ready", ["dev:jeanmichel", label])]) == []
 
 
 def test_dev_reacts_to_reviewer_agent_comment_in_progress():
-    it = item("doing", ["dev:jeanmi"], [agent_says(1, "jeanmi"), agent_says(2, "didier")])
-    assert kinds("jeanmi", [it]) == [("dev", "new_comment")]
+    it = item("doing", ["dev:jeanmichel"], [agent_says(1, "jeanmichel"), agent_says(2, "didier")])
+    assert kinds("jeanmichel", [it]) == [("dev", "new_comment")]
 
 
 def test_status_comments_are_not_conversation():
     status = Comment(3, "brice", True, status=True)
-    it = item("doing", ["dev:jeanmi"], [agent_says(1, "jeanmi"), status])
-    assert kinds("jeanmi", [it]) == []
+    it = item("doing", ["dev:jeanmichel"], [agent_says(1, "jeanmichel"), status])
+    assert kinds("jeanmichel", [it]) == []
 
 
 def test_conflict_on_approved_item_goes_to_its_dev():
     pr = PR(5, "u", "abc", "CONFLICTING")
-    assert kinds("jeanmi", [item("approved", ["dev:jeanmi"], prs=[pr])]) == [("dev", "pr_conflict")]
+    assert kinds("jeanmichel", [item("approved", ["dev:jeanmichel"], prs=[pr])]) == [("dev", "pr_conflict")]
 
 
 def test_only_a_human_comment_reopens_approved_work():
-    it = item("approved", ["dev:jeanmi"], [agent_says(1, "didier")])
-    assert kinds("jeanmi", [it]) == []
-    it = item("approved", ["dev:jeanmi"], [agent_says(1, "didier"), human(2)])
-    assert kinds("jeanmi", [it]) == [("dev", "human_comment")]
+    it = item("approved", ["dev:jeanmichel"], [agent_says(1, "didier")])
+    assert kinds("jeanmichel", [it]) == []
+    it = item("approved", ["dev:jeanmichel"], [agent_says(1, "didier"), human(2)])
+    assert kinds("jeanmichel", [it]) == [("dev", "human_comment")]
 
 
 # ---------------------------------------------------------------- auto role (review)
 def test_default_reviewer_gets_pr_to_review():
-    assert kinds("didier", [item("review", ["dev:jeanmi"], prs=[PR1])]) == [("review", "pr_updated")]
+    assert kinds("didier", [item("review", ["dev:jeanmichel"], prs=[PR1])]) == [("review", "pr_updated")]
 
 
 def test_review_needs_a_linked_pr():
-    assert kinds("didier", [item("review", ["dev:jeanmi"])]) == []
+    assert kinds("didier", [item("review", ["dev:jeanmichel"])]) == []
 
 
 def test_explicit_review_label_wins_over_default():
-    d = dept(staff={"jeanmi": ["dev"], "didier": ["review"], "gerard": ["review"]})
-    it = item("review", ["dev:jeanmi", "review:gerard"], prs=[PR1])
+    d = dept(staff={"jeanmichel": ["dev"], "didier": ["review"], "gerard": ["review"]})
+    it = item("review", ["dev:jeanmichel", "review:gerard"], prs=[PR1])
     assert kinds("didier", [it], d) == []
     assert kinds("gerard", [it], d) == [("review", "pr_updated")]
 
 
 def test_nobody_reviews_their_own_work():
-    d = dept(staff={"jeanmi": ["dev", "review"], "didier": ["review"]})
-    it = item("review", ["dev:jeanmi"], prs=[PR1])
-    assert kinds("jeanmi", [it], d) == []
+    d = dept(staff={"jeanmichel": ["dev", "review"], "didier": ["review"]})
+    it = item("review", ["dev:jeanmichel"], prs=[PR1])
+    assert kinds("jeanmichel", [it], d) == []
     assert kinds("didier", [it], d) == [("review", "pr_updated")]
 
 
 def test_new_head_commit_is_a_new_event_key():
-    k1 = events_for("didier", dept(), [item("review", ["dev:jeanmi"], prs=[PR1])])[0].key
-    k2 = events_for("didier", dept(), [item("review", ["dev:jeanmi"], prs=[PR(5, "u", "def")])])[0].key
+    k1 = events_for("didier", dept(), [item("review", ["dev:jeanmichel"], prs=[PR1])])[0].key
+    k2 = events_for("didier", dept(), [item("review", ["dev:jeanmichel"], prs=[PR(5, "u", "def")])])[0].key
     assert k1 != k2
 
 

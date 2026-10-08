@@ -18,6 +18,7 @@ class Preset:
     roles: dict[str, list[str]]        # flow -> suggested roles
     capabilities: list[str]
     body: str                          # personality; "{name}" is replaced by the hired name
+    display: str = ""                  # how the preset writes its own name (e.g. JeanMichel)
 
 
 def _parse(path: Path) -> Preset:
@@ -25,7 +26,7 @@ def _parse(path: Path) -> Preset:
     _, front, body = text.split("---\n", 2)
     meta = yaml.safe_load(front) or {}
     return Preset(path.stem, meta.get("summary", ""), meta.get("roles") or {},
-                  list(meta.get("capabilities") or []), body.strip())
+                  list(meta.get("capabilities") or []), body.strip(), meta.get("display", ""))
 
 
 def list_presets() -> list[Preset]:
@@ -47,7 +48,8 @@ def hire(preset: str, root: Path, name: str | None = None, department: str | Non
     if path.exists():
         raise ConfigError("agents/%s.md already exists: pick another name (--as)" % name)
     path.parent.mkdir(parents=True, exist_ok=True)
-    body = p.body.replace("{name}", name.capitalize())
+    shown = p.display if (p.display and name == p.name) else name.capitalize()
+    body = p.body.replace("{name}", shown)
     path.write_text("---\n# Plain sentences about what THIS agent really has: accounts, machines, tokens.\n"
                     "# A capability is a claim, not a permission: the credentials live in local.yml.\n"
                     "capabilities: []\n---\n%s\n" % body)

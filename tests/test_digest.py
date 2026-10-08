@@ -9,7 +9,7 @@ def states():
         "kevin": {"day": "2026-10-08", "day_count": 3,
                   "current": {"ref": "acme/mkt#4", "trigger": "writer.assigned", "delivered0": T0},
                   "alerts": [{"ts": T0 + 10, "ref": "acme/mkt#2", "msg": "kevin stopped answering"}]},
-        "jeanmi": {"day": "2026-10-07", "day_count": 9, "current": None, "alerts": []},
+        "jeanmichel": {"day": "2026-10-07", "day_count": 9, "current": None, "alerts": []},
     }
 
 
@@ -28,4 +28,4 @@ def test_summary_shows_each_agent_with_today_count():
     text, _ = digest(states(), cursor=T0 + 10, today="2026-10-08", alerts_only=False, instance="mac-mini")
     assert "*unstrikeable · mac-mini*" in text
     assert "• *kevin*: acme/mkt#4 `writer.assigned`" in text and "3 event(s) today" in text
-    assert "• *jeanmi*: free · 0 event(s) today" in text            # yesterday's count does not show
+    assert "• *jeanmichel*: free · 0 event(s) today" in text            # yesterday's count does not show

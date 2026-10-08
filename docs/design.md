@@ -165,7 +165,7 @@ Gerard is a senior ML engineer. Terse, measures before claiming.
 ### Agent presets
 
 The runtime ships ready-made agent sheets (personality + suggested roles per flow, no capabilities):
-Kevin (community manager), Brandon (growth hacker), Capucine (project manager), Jeanmi (developer),
+Kevin (community manager), Brandon (growth hacker), Capucine (project manager), JeanMichel (developer),
 Didier (reviewer). `uns hire <preset> [--as <name>]` copies one into `agents/<name>.md` and prints the
 `config.yml` lines to add; the human then writes the real capabilities of that instance.
 

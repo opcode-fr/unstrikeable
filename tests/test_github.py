@@ -3,7 +3,7 @@ from unstrikeable.backends.github import GitHubBoard, parse_issue
 from unstrikeable.config import load_flow
 
 FLOW = load_flow("dev")
-BOTS = {"jeanmi-acme"}
+BOTS = {"jeanmichel-acme"}
 
 
 def node(**over):
@@ -11,14 +11,14 @@ def node(**over):
         "number": 12, "title": "Add X", "url": "https://github.com/acme/app/issues/12", "state": "OPEN",
         "authorAssociation": "MEMBER",
         "repository": {"nameWithOwner": "acme/app"},
-        "labels": {"nodes": [{"name": "dev:jeanmi"}]},
+        "labels": {"nodes": [{"name": "dev:jeanmichel"}]},
         "issueDependenciesSummary": {"blockedBy": 0},
         "comments": {"nodes": [
             {"databaseId": 1, "author": {"login": "brice"}, "authorAssociation": "OWNER", "body": "go"},
-            {"databaseId": 2, "author": {"login": "jeanmi-acme"}, "authorAssociation": "NONE",
-             "body": "plan\n<!-- uns:agent=jeanmi -->"},
-            {"databaseId": 3, "author": {"login": "jeanmi-acme"}, "authorAssociation": "NONE",
-             "body": "🟢\n<!-- uns:agent=jeanmi -->\n<!-- uns:status agent=jeanmi state=working since=1 beat=2 -->"},
+            {"databaseId": 2, "author": {"login": "jeanmichel-acme"}, "authorAssociation": "NONE",
+             "body": "plan\n<!-- uns:agent=jeanmichel -->"},
+            {"databaseId": 3, "author": {"login": "jeanmichel-acme"}, "authorAssociation": "NONE",
+             "body": "🟢\n<!-- uns:agent=jeanmichel -->\n<!-- uns:status agent=jeanmichel state=working since=1 beat=2 -->"},
             {"databaseId": 4, "author": {"login": "random"}, "authorAssociation": "NONE", "body": "hey"},
             {"databaseId": 5, "author": None, "authorAssociation": "NONE", "body": "ghost"},
         ]},
@@ -33,7 +33,7 @@ def node(**over):
 def test_issue_maps_column_to_logical_state():
     it = parse_issue(node(), "In progress", FLOW, BOTS)
     assert (it.repo, it.number, it.state) == ("acme/app", 12, "doing")
-    assert it.labels == ["dev:jeanmi"]
+    assert it.labels == ["dev:jeanmichel"]
 
 
 def test_unknown_column_gives_no_state():
@@ -43,13 +43,13 @@ def test_unknown_column_gives_no_state():
 def test_comments_carry_trust_agent_and_status():
     cs = parse_issue(node(), "Ready", FLOW, BOTS).comments
     assert [(c.id, c.trusted, c.agent, c.status) for c in cs] == [
-        (1, True, None, False), (2, True, "jeanmi", False), (3, True, "jeanmi", True),
+        (1, True, None, False), (2, True, "jeanmichel", False), (3, True, "jeanmichel", True),
         (4, False, None, False), (5, False, None, False)]
 
 
 def test_agent_marker_from_an_unknown_author_is_not_trusted():
     n = node(comments={"nodes": [{"databaseId": 9, "author": {"login": "evil"}, "authorAssociation": "NONE",
-                                  "body": "<!-- uns:agent=jeanmi -->"}]})
+                                  "body": "<!-- uns:agent=jeanmichel -->"}]})
     c = parse_issue(n, "Ready", FLOW, BOTS).comments[0]
     assert not c.trusted
 

@@ -45,7 +45,7 @@ def test_app_exchange_stores_the_key_privately_and_prints_no_secret(tmp_path):
 def test_update_upgrades_copies_skills_and_dry_runs_each_agent(tmp_path):
     calls = []
     skills = tmp_path / "profile-skills"
-    local = {"agents": {"kevin": {}, "jeanmi": {}}, "skills_dirs": [str(skills)]}
+    local = {"agents": {"kevin": {}, "jeanmichel": {}}, "skills_dirs": [str(skills)]}
     report = update(local, pin=">=0.1,<0.2", run=lambda args: calls.append(args) or "",
                     version=lambda: "0.1.2")
     assert calls[0][:3] == ["uv", "tool", "upgrade"]
