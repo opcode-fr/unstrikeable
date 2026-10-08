@@ -1,0 +1,46 @@
+# Flow for code work: a PM writes specs, devs open PRs, reviewers check them, humans merge.
+states:
+  - key: backlog
+    column: Backlog
+  - key: ready
+    column: Ready
+  - key: doing
+    column: In progress
+  - key: review
+    column: In review
+  - key: approved
+    column: To merge
+  - key: done
+    column: Done
+
+roles:
+  pm:                           # no label: acts on every item, first pm of the staff
+    on:
+      backlog:
+        - item_new
+        - human_comment
+  dev:
+    label: "dev:{agent}"
+    on:
+      ready:
+        - assigned
+      doing:
+        - new_comment           # reviewer agents send work back with a comment
+      approved:
+        - pr_conflict
+        - human_comment
+  review:
+    label: "review:{agent}"
+    auto: true                  # no review label on the item: first reviewer of the staff
+    on:
+      review:
+        - pr_updated
+
+playbooks:
+  pm.item_new: playbooks/dev/spec.md
+  pm.human_comment: playbooks/dev/spec.md
+  dev.assigned: playbooks/dev/take.md
+  dev.new_comment: playbooks/dev/rework.md
+  dev.human_comment: playbooks/dev/rework.md
+  dev.pr_conflict: playbooks/dev/conflict.md
+  review.pr_updated: playbooks/dev/review.md

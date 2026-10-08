@@ -1,0 +1,45 @@
+# Flow for content (posts, articles): a planner briefs ideas, a writer drafts them in a PR,
+# a human reviews, publishes, then merges.
+states:
+  - key: backlog
+    column: Ideas
+  - key: ready
+    column: Ready to write
+  - key: doing
+    column: Drafting
+  - key: review
+    column: In review
+  - key: approved
+    column: Ready to publish
+  - key: done
+    column: Published
+
+roles:
+  planner:                      # no label: acts on every item, first planner of the staff
+    on:
+      backlog:
+        - item_new
+        - human_comment
+  writer:
+    label: "writer:{agent}"
+    on:
+      ready:
+        - assigned
+      doing:
+        - human_comment
+      approved:
+        - pr_conflict
+        - human_comment
+  reviewer:
+    label: "reviewer:{agent}"
+    human: true
+
+playbooks:
+  planner.item_new: playbooks/content/brief.md
+  planner.human_comment: playbooks/content/brief.md
+  writer.assigned: playbooks/content/write.md
+  writer.human_comment: playbooks/content/rework.md
+  writer.pr_conflict: playbooks/content/conflict.md
+
+artifact:
+  path: "{yyyy}/{mm}/{channel}-{dd}-{slug}.md"
