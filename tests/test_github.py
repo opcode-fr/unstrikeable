@@ -123,3 +123,27 @@ def test_prune_is_refused_while_items_sit_outside_the_flow():
     board.items = lambda: [parse_issue(node(), "Todo", flow, set())]
     with pytest.raises(GitHubError, match="1 open item"):
         board.ensure_layout(d, apply=True, prune=True)
+
+
+def test_app_tokens_see_private_members_as_none_so_repo_permission_decides():
+    # Verified live: through a GitHub App token, a private org member's authorAssociation is NONE.
+    n = node(authorAssociation="NONE", comments={"nodes": [
+        {"databaseId": 1, "author": {"login": "bdauzats"}, "authorAssociation": "NONE", "body": "go"},
+        {"databaseId": 2, "author": {"login": "random"}, "authorAssociation": "NONE", "body": "hey"}]})
+    n["author"] = {"login": "bdauzats"}
+    writers = {"bdauzats"}
+    it = parse_issue(n, "Ideas", load_flow("content"), set(), can_write=lambda login: login in writers)
+    assert it.author_trusted
+    assert [c.trusted for c in it.comments] == [True, False]
+
+
+def test_repo_permission_lookup_is_cached_per_login():
+    calls = []
+
+    def run(args, stdin=None):
+        calls.append(args)
+        return "write\n" if "bdauzats" in args[1] else "read\n"
+    board = GitHubBoard({"owner": "acme", "number": 1}, FLOW, set(), graphql=lambda q, **v: {}, run=run)
+    assert board.can_write("acme/app", "bdauzats") and board.can_write("acme/app", "bdauzats")
+    assert not board.can_write("acme/app", "random")
+    assert len(calls) == 2

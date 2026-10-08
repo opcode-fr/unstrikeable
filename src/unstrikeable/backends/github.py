@@ -17,7 +17,7 @@ AGENT_RE = re.compile(r"<!-- uns:agent=(\S+) -->")
 CI = {"SUCCESS": "SUCCESS", "FAILURE": "FAILURE", "ERROR": "FAILURE", "PENDING": "PENDING", "EXPECTED": "PENDING"}
 
 ISSUE_FIELDS = """
-  number title url state authorAssociation
+  number title url state authorAssociation author { login }
   repository { nameWithOwner }
   labels(first:30) { nodes { name } }
   issueDependenciesSummary { blockedBy }
@@ -71,25 +71,36 @@ def _login(author: dict | None) -> str:
     return ((author or {}).get("login") or "").replace("[bot]", "").lower()
 
 
-def parse_comment(c: dict, bots: set[str]) -> Comment:
+WRITE_PERMS = frozenset({"admin", "maintain", "write", "triage"})
+
+
+def _trusted(assoc: str | None, login: str, bots: set[str], can_write: Callable[[str], bool] | None) -> bool:
+    """Member of the org, one of our agents, or (App tokens see private members as NONE) a repo writer."""
+    if assoc in TRUSTED or login in bots:
+        return True
+    return bool(can_write and login and login != "?" and can_write(login))
+
+
+def parse_comment(c: dict, bots: set[str], can_write: Callable[[str], bool] | None = None) -> Comment:
     login = _login(c.get("author"))
-    trusted = c.get("authorAssociation") in TRUSTED or login in bots
+    trusted = _trusted(c.get("authorAssociation"), login, bots, can_write)
     body = c.get("body") or ""
     m = AGENT_RE.search(body) if trusted else None
     return Comment(int(c["databaseId"]), login or "?", trusted, agent=m.group(1) if m else None,
                    status=trusted and "<!-- uns:status " in body, body=body)
 
 
-def parse_issue(n: dict, column: str | None, flow: Flow, bots: set[str]) -> Item:
+def parse_issue(n: dict, column: str | None, flow: Flow, bots: set[str],
+                can_write: Callable[[str], bool] | None = None) -> Item:
     prs = [PR(p["number"], p["url"], p["headRefOid"], p.get("mergeable") or "UNKNOWN",
               CI.get(((p.get("statusCheckRollup") or {}).get("state")) or ""))
            for p in (n.get("closedByPullRequestsReferences") or {}).get("nodes") or []]
     return Item(
         repo=n["repository"]["nameWithOwner"], number=n["number"], title=n["title"],
         state=flow.state_of(column), labels=[l["name"] for l in n["labels"]["nodes"]], url=n.get("url", ""),
-        author_trusted=n.get("authorAssociation") in TRUSTED,
+        author_trusted=_trusted(n.get("authorAssociation"), _login(n.get("author")), bots, can_write),
         blocked_by=(n.get("issueDependenciesSummary") or {}).get("blockedBy") or 0,
-        comments=[parse_comment(c, bots) for c in n["comments"]["nodes"]], prs=prs)
+        comments=[parse_comment(c, bots, can_write) for c in n["comments"]["nodes"]], prs=prs)
 
 
 def split_ref(ref: str) -> tuple[str, str, int]:
@@ -111,6 +122,23 @@ class GitHubBoard:
         self.flow, self.bots, self.token = flow, {b.lower() for b in bots}, token
         self.graphql = graphql or make_graphql(token)
         self.run = run or (lambda args, stdin=None: gh(args, stdin, token))
+        self._perms: dict[tuple[str, str], bool] = {}
+
+    def can_write(self, repo: str, login: str) -> bool:
+        """Repo permission of a user, cached for the life of this board object (one poll)."""
+        key = (repo, login)
+        if key not in self._perms:
+            try:
+                perm = self.run(["api", "repos/%s/collaborators/%s/permission" % (repo, login),
+                                 "--jq", ".permission"]).strip()
+            except GitHubError:
+                perm = ""
+            self._perms[key] = perm in WRITE_PERMS
+        return self._perms[key]
+
+    def _parse(self, n: dict, column: str | None) -> Item:
+        repo = n["repository"]["nameWithOwner"]
+        return parse_issue(n, column, self.flow, self.bots, lambda login: self.can_write(repo, login))
 
     # ------------------------------------------------------------ read
     def items(self) -> list[Item]:
@@ -122,7 +150,7 @@ class GitHubBoard:
                 c = n.get("content") or {}
                 if c.get("__typename") != "Issue" or c.get("state") != "OPEN":
                     continue
-                out.append(parse_issue(c, (n.get("status") or {}).get("name"), self.flow, self.bots))
+                out.append(self._parse(c, (n.get("status") or {}).get("name")))
             if not page["pageInfo"]["hasNextPage"]:
                 return out
             cursor = page["pageInfo"]["endCursor"]
@@ -141,7 +169,7 @@ class GitHubBoard:
         iss, pi = self._issue(ref)
         if iss["state"] != "OPEN":
             return None
-        return parse_issue(iss, ((pi or {}).get("status") or {}).get("name"), self.flow, self.bots)
+        return self._parse(iss, ((pi or {}).get("status") or {}).get("name"))
 
     # ------------------------------------------------------------ write
     def move(self, ref: str, column: str) -> None:
