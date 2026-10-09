@@ -26,6 +26,8 @@ DEFAULT_MEMORY = {
     "max_age_h": 24,          # …or once the oldest one is this old
     "shared_max_words": 3000,
     "private_max_words": 1500,
+    "wiki": False,            # inject only memory/shared/index.md; the agent opens the pages it needs
+    "ingest_sources": [],     # what `uns ingest` may point at: path prefixes, URLs (exact or prefix). Humans, by PR
 }
 
 DEFAULT_LIMITS = {

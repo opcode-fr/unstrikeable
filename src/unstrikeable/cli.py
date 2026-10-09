@@ -20,7 +20,7 @@ from .backends.base import Board
 from .backends.github import GitHubBoard, GitHubError
 from .config import DEFAULT_MEMORY, Company, ConfigError, Department, load_company
 from .digest import digest
-from .memory import commit_and_push, ingest_entry, publish, pull, write_entry
+from .memory import commit_and_push, ingest_note, publish, pull, write_entry
 from .meter import hermes_state_db, make_usage, parse_usage, read_bot_chat_usage
 from .model import AGENT_MARK
 from .poll import MEMORY_REF, baseline, poll
@@ -394,9 +394,9 @@ def cmd_update(a: argparse.Namespace) -> None:
     print(admin.update(local, load(local).runtime))
 
 
-def _remember(co: Company, agent: str, title: str, body: str, share: bool) -> Path:
+def _remember(co: Company, agent: str, title: str, body: str, share: bool, ingest: bool = False) -> Path:
     try:
-        path = write_entry(co.root, agent, title, body, share=share)
+        path = write_entry(co.root, agent, title, body, share=share, ingest=ingest)
     except ValueError as e:
         raise UsageError(str(e)) from e
     if (co.root / ".git").exists():
@@ -436,14 +436,10 @@ def reviewer(argv: object):
 def cmd_ingest(a: argparse.Namespace) -> None:
     co = load(load_local())
     try:
-        path = ingest_entry(co.root, a.agent, a.source, a.title)
+        title, body = ingest_note(a.source, {**DEFAULT_MEMORY, **co.memory}.get("ingest_sources") or [], a.title)
     except ValueError as e:
         raise UsageError(str(e)) from e
-    if (co.root / ".git").exists():
-        owner = next((d.board.get("owner") for d in co.departments_of(a.agent)), "")
-        token = agent_token(a.agent, owner) if owner else None
-        env = {**os.environ, "GH_TOKEN": token} if token else None
-        commit_and_push(co.root, [path], "memory(%s): ingest %s" % (a.agent, a.source), env=env)
+    path = _remember(co, a.agent, title, body, share=True, ingest=True)
     print("queued for the curator: %s" % path.relative_to(co.root))
 
 

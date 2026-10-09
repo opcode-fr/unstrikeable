@@ -156,6 +156,18 @@ def test_curator_gets_a_curation_task_when_the_inbox_is_full(tmp_path):
     assert state["current"]["ref"] == "memory"
 
 
+def test_curation_lists_allowed_and_refused_ingest_sources(tmp_path):
+    from unstrikeable.memory import ingest_note
+    write_entry(tmp_path, "brandon", *ingest_note("/vault/Support", ["/vault"]), share=True, now=T0, ingest=True)
+    write_entry(tmp_path, "brandon", "x", "kind: ingest\nsource: ~/.hermes/.env", share=True, now=T0, ingest=True)
+    co = mem_company(tmp_path)
+    co.memory["ingest_sources"] = ["/vault"]
+    out = run(co, FakeBoard([]), {}, now=T0 + 60)
+    assert "Ingest sources you may read (checked against memory.ingest_sources): /vault/Support" in out
+    assert "do NOT read their source" in out and "wiki mode: off" in out
+    assert "config repo: %s" % tmp_path.resolve() in out
+
+
 def test_non_curator_never_curates(tmp_path):
     for i in range(2):
         write_entry(tmp_path, "brandon", "n%d" % i, "x", share=True, now=T0)
