@@ -9,7 +9,6 @@ import copy
 import hashlib
 import time
 from pathlib import Path
-from typing import Callable
 
 from .backends.base import Board
 from .config import DEFAULT_MEMORY, Company, Department
@@ -22,9 +21,7 @@ from .status import hhmm, lease_step, parse_status
 MAX_BODY = 3000
 SHIPPED = Path(__file__).parent          # playbooks/ shipped with the runtime
 MEMORY_REF = "memory"
-USAGE_TTL = 15 * 60                      # the usage meter is read at most every 15 min
-
-Meter = Callable[[int], "float | None"]  # days -> estimated cost (USD) over that window, None = unknown
+MONTH_S = 30 * 86400                     # cost quota window "month" = rolling 30 days
 
 
 def _read(path: Path) -> str:
@@ -121,15 +118,21 @@ def _alert(work: dict, now: int, ref: str, msg: str) -> None:
 
 
 # ---------------------------------------------------------------- quotas
-def check_quota(work: dict, limits: dict, meter: Meter | None, now: int) -> str | None:
-    """Reason to stop the agent (cost quota reached), or None. The meter is cached for USAGE_TTL."""
+def check_quota(work: dict, limits: dict, usage: Usage | None, now: int) -> str | None:
+    """Reason to stop the agent (cost quota reached), or None.
+    Spend = closed tasks (work["spend"], [end, cost]) + what the task in progress used so far. Board work only:
+    the same Bot Chat counters as the task records, so Slack chats of the profile are not counted.
+    Day = calendar day (local time), month = rolling 30 days."""
+    work["spend"] = [s for s in work.get("spend") or [] if s[0] >= now - MONTH_S]
+    cur = work.get("current")
+    running = (usage_delta(cur.get("usage0"), usage()) if cur and usage else None) or {}
+    today = time.strftime("%Y-%m-%d", time.localtime(now))
+    day = sum(c for t, c in work["spend"] if time.strftime("%Y-%m-%d", time.localtime(t)) == today)
+    month = sum(c for _, c in work["spend"])
+    extra = running.get("cost", 0)
+    u = {"ts": now, "day": round(day + extra, 4), "month": round(month + extra, 4)}
+    work["usage"] = u                                                   # shown by `uns digest`
     day_cap, month_cap = limits.get("max_cost_per_day"), limits.get("max_cost_per_month")
-    if meter is None or (day_cap is None and month_cap is None):
-        return None
-    u = work.get("usage") or {}
-    if now - u.get("ts", 0) > USAGE_TTL:
-        u = {"ts": now, "day": meter(1), "month": meter(30)}
-        work["usage"] = u
     if day_cap is not None and u.get("day") is not None and u["day"] >= day_cap:
         return "daily cost quota reached ($%.2f / $%.2f)" % (u["day"], day_cap)
     if month_cap is not None and u.get("month") is not None and u["month"] >= month_cap:
@@ -139,7 +142,7 @@ def check_quota(work: dict, limits: dict, meter: Meter | None, now: int) -> str 
 
 # ---------------------------------------------------------------- poll
 def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: int | None = None,
-         dry_run: bool = False, meter: Meter | None = None, usage: Usage | None = None) -> str:
+         dry_run: bool = False, usage: Usage | None = None) -> str:
     """Return the text to deliver to the agent ('' = nothing). Mutates `state` unless dry_run."""
     now = int(time.time()) if now is None else now
     work = state if not dry_run else copy.deepcopy(state)
@@ -155,7 +158,9 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
     # 0. kill switch and quotas: a paused agent receives nothing until a human resumes it
     if work.get("paused"):
         return _finish(state, work, seen, "", dry_run)
-    reason = check_quota(work, limits, meter, now)
+    if usage is not None:
+        usage = _once(usage)                                            # one database read per poll
+    reason = check_quota(work, limits, usage, now)
     if reason:
         work["paused"] = {"ts": now, "reason": reason, "by": "quota"}
         _alert(work, now, "-", "%s paused: %s. `uns resume --agent %s` to restart." % (agent, reason, agent))
@@ -285,6 +290,8 @@ def _record(work: dict, agent: str, cur: dict, dept: Department | None, it: Item
            "title": it.title if it else cur.get("title"), "labels": list(it.labels) if it else None,
            "usage": usage_delta(cur.get("usage0"), usage() if usage else None)}
     work["finished"] = (work.get("finished") or []) + [rec]
+    if rec["usage"]:
+        work["spend"] = (work.get("spend") or []) + [[end, rec["usage"]["cost"]]]
 
 
 def _flag_ambiguous(agent: str, dept: Department, board: Board, items: list[Item]) -> None:
@@ -299,6 +306,16 @@ def _flag_ambiguous(agent: str, dept: Department, board: Board, items: list[Item
                       "Several agents assigned as %s (%s): keep one, then remove `needs:human`." % (
                           role.name, ", ".join(named)))
                 break
+
+
+def _once(read: Usage) -> Usage:
+    cache: list = []
+
+    def usage() -> dict | None:
+        if not cache:
+            cache.append(read())
+        return cache[0]
+    return usage
 
 
 def _finish(state: dict, work: dict, seen: set, out: str, dry_run: bool) -> str:

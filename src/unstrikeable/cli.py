@@ -21,7 +21,7 @@ from .backends.github import GitHubBoard, GitHubError
 from .config import Company, ConfigError, Department, load_company
 from .digest import digest
 from .memory import commit_and_push, pull, write_entry
-from .meter import hermes_state_db, make_meter, make_usage, parse_usage, read_bot_chat_usage
+from .meter import hermes_state_db, make_usage, parse_usage, read_bot_chat_usage
 from .model import AGENT_MARK
 from .poll import MEMORY_REF, baseline, poll
 from .presets import hire, list_presets
@@ -145,7 +145,7 @@ def next_event(agent: str, dry_run: bool = False, piped_usage: str | None = None
     if piped_usage is not None:
         counters = parse_usage(piped_usage)
         usage = lambda: counters                                       # noqa: E731
-    out = poll(agent, co, boards, state, dry_run=dry_run, meter=make_meter(mcfg), usage=usage)
+    out = poll(agent, co, boards, state, dry_run=dry_run, usage=usage)
     if not dry_run:
         append_tasks(agent, state.pop("finished", None) or [], local)
         write_state(agent, state)

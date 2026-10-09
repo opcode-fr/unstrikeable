@@ -178,37 +178,53 @@ def test_paused_agent_receives_nothing(tmp_path):
     assert run(company(tmp_path), FakeBoard([item(1)]), state) == ""
 
 
+def counters(cost):
+    return lambda: {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "reasoning": 0, "cost": cost}
+
+
 def test_daily_cost_quota_pauses_the_agent_and_alerts(tmp_path):
-    co, state = company(tmp_path, limits={"max_cost_per_day": 5}), {}
-    out = poll("kevin", co, {"marketing": FakeBoard([item(1)])}, state, T0, meter=lambda days: 7.5)
+    co = company(tmp_path, limits={"max_cost_per_day": 5})
+    state = {"spend": [[T0 - 600, 3.0], [T0 - 300, 2.5]]}           # two tasks closed today: $5.50
+    out = poll("kevin", co, {"marketing": FakeBoard([item(1)])}, state, T0, usage=counters(0))
     assert out == ""
     assert state["paused"]["by"] == "quota" and "daily cost quota" in state["paused"]["reason"]
     assert "uns resume --agent kevin" in state["alerts"][-1]["msg"]
 
 
-def test_under_quota_works_normally(tmp_path):
-    co, state = company(tmp_path, limits={"max_cost_per_day": 5, "max_cost_per_month": 100}), {}
+def test_the_task_in_progress_counts_toward_the_quota(tmp_path):
+    co, state, board = company(tmp_path, limits={"max_cost_per_day": 5}), {}, FakeBoard([item(1)])
+    assert "writer.assigned" in poll("kevin", co, {"marketing": board}, state, T0, usage=counters(10.0))
+    poll("kevin", co, {"marketing": board}, state, T0 + 60, usage=counters(16.0))     # +$6 in this task
+    assert state["paused"]["by"] == "quota" and "$6.00 / $5.00" in state["paused"]["reason"]
+
+
+def test_yesterday_counts_for_the_month_not_the_day(tmp_path):
+    co = company(tmp_path, limits={"max_cost_per_day": 5, "max_cost_per_month": 100})
+    state = {"spend": [[T0 - 2 * 86400, 50.0], [T0 - 40 * 86400, 500.0]]}
     assert "writer.assigned" in poll("kevin", co, {"marketing": FakeBoard([item(1)])}, state, T0,
-                                     meter=lambda days: 1.0 if days == 1 else 20.0)
+                                     usage=counters(0))
+    assert state["usage"]["day"] == 0 and state["usage"]["month"] == 50.0
+    assert state["spend"] == [[T0 - 2 * 86400, 50.0]]                 # older than 30 days: dropped
+    state["spend"].append([T0 - 3 * 86400, 60.0])
+    state["current"] = None
+    poll("kevin", co, {"marketing": FakeBoard([])}, state, T0 + 60, usage=counters(0))
+    assert "30-day cost quota" in state["paused"]["reason"]
 
 
-def test_meter_is_read_at_most_every_15_minutes(tmp_path):
-    calls = []
-    co, state = company(tmp_path, limits={"max_cost_per_day": 5}), {}
-
-    def meter(days):
-        calls.append(days)
-        return 1.0
-
-    for t in (T0, T0 + 60, T0 + 120):
-        poll("kevin", co, {"marketing": FakeBoard([])}, state, t, meter=meter)
-    assert len(calls) == 2                       # one read (day + month) for three polls
+def test_closed_tasks_feed_the_spend_history(tmp_path):
+    board, state, co = FakeBoard([item(1)]), {}, company(tmp_path)
+    poll("kevin", co, {"marketing": board}, state, T0, usage=counters(1.0))
+    board.upsert_status("acme/mkt#1", "kevin", status_body("kevin", "done", T0, T0 + 60, kind="post"))
+    poll("kevin", co, {"marketing": board}, state, T0 + 120, usage=counters(1.75))
+    assert state["spend"] == [[T0 + 60, 0.75]]
 
 
-def test_no_quota_configured_never_reads_the_meter(tmp_path):
-    def meter(days):
-        raise AssertionError("must not be called")
-    poll("kevin", company(tmp_path), {"marketing": FakeBoard([])}, {}, T0, meter=meter)
+def test_unknown_usage_never_pauses(tmp_path):
+    co = company(tmp_path, limits={"max_cost_per_day": 5})
+    state = {}
+    assert "writer.assigned" in poll("kevin", co, {"marketing": FakeBoard([item(1)])}, state, T0,
+                                     usage=lambda: None)
+    assert not state.get("paused")
 
 
 # ---------------------------------------------------------------- migration baseline

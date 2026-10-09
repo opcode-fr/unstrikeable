@@ -1,8 +1,7 @@
-"""Usage meters, read from the runtime that executes an agent.
+"""Usage meter, read from the runtime that executes an agent.
 
-- cost meter: estimated cost over N days (cost quotas), from `hermes insights`.
-- usage reader: cumulative counters of the agent's board work (tokens, cost), read at the start and the end of a
-  task; the difference is what the task spent. Hermes delivers board events to the profile's canonical "Bot Chat"
+Cumulative counters of the agent's board work (tokens, cost), read at each poll: the difference between the start
+and the end of a task is what the task spent, and the sum of task costs drives the cost quotas. Hermes delivers board events to the profile's canonical "Bot Chat"
   session, so only that session and its children (compression rotations, subagents) are counted: Slack chats of
   the same profile are left out.
 """
@@ -10,13 +9,10 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sqlite3
-import subprocess
 from pathlib import Path
 from typing import Callable
 
-COST_RE = re.compile(r"Estimated:\s*~?\$([\d,]+(?:\.\d+)?)")
 BOT_CHAT_TITLE = "Bot Chat"                 # Hermes CANONICAL_BOT_CHAT_TITLE (hermes_state.py)
 USAGE_KEYS = ("in", "out", "cache_read", "cache_write", "reasoning", "cost")
 
@@ -35,35 +31,9 @@ FROM sessions WHERE id IN (SELECT id FROM lineage)
 """
 
 
-def hermes_cost(text: str) -> float | None:
-    m = COST_RE.search(text or "")
-    return float(m.group(1).replace(",", "")) if m else None
-
-
-def _run(args: list[str]) -> str:
-    p = subprocess.run(args, capture_output=True, text=True, timeout=120)
-    if p.returncode != 0:
-        raise RuntimeError(p.stderr.strip()[:300])
-    return p.stdout
-
-
 def _check(cfg: dict) -> None:
     if cfg.get("type") != "hermes":
         raise ValueError("unknown meter type %r" % cfg.get("type"))
-
-
-def make_meter(cfg: dict | None, run: Callable[[list[str]], str] = _run) -> Callable[[int], float | None] | None:
-    """local.yml `agents.<a>.meter`: {type: hermes, profile: <profile>}. Unknown cost never crashes a poll."""
-    if not cfg:
-        return None
-    _check(cfg)
-
-    def meter(days: int) -> float | None:
-        try:
-            return hermes_cost(run(["hermes", "-p", cfg["profile"], "insights", "--days", str(days)]))
-        except Exception:
-            return None
-    return meter
 
 
 def hermes_state_db(profile: str) -> Path:
@@ -84,7 +54,8 @@ def read_bot_chat_usage(db: Path) -> dict:
 
 
 def make_usage(cfg: dict | None) -> Usage | None:
-    """Same `meter` entry as make_meter (`state_db:` overrides the path). None = unknown, never an exception."""
+    """local.yml `agents.<a>.meter`: {type: hermes, profile: <p>} (`state_db:` overrides the path).
+    The reader returns None when unknown, never raises: a broken meter must not crash a poll."""
     if not cfg:
         return None
     _check(cfg)
