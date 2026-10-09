@@ -17,12 +17,15 @@ your sheet and the playbook to follow.
    - `uns comment <ref> --agent <you> --body-file <md>`: comments are signed for you.
    - `uns label <ref> --agent <you> --add spec:question` (or `--remove`): state labels only.
 3. **Heartbeat**: long task? Re-run `uns status … --state working` at least every 20 min, with `--done` / `--todo`.
-4. **Finish, always**: `--state done --done "<what changed, what is verified>" --learned "<lesson>"`, or
+4. **Finish, always**: `--state done --done "<what changed, what is verified>" --kind <kind> --learned "<lesson>"`, or
    `--state blocked --note "<what you need>"`. `--learned` is mandatory on `done`: ask yourself what will help
    next time. A lesson is a **rule and its reason** ("0.857 vs 0.753 is 10.4 points, not 12: always name the
    model"), not a log of what you did. Nothing worth keeping? `--learned none`. Useful to the whole team?
    add `--share-learned` (the curator reviews it).
-   Without it you get nudged, then marked `agent:lost`.
+   `--kind` is mandatory on `done` when the flow declares kinds (the event footer lists them): the nature of the
+   work you just did (`bug`, `feature`, `article`…), used to compare time and cost per kind. Pick the honest one;
+   `other` exists for a reason. The curator task needs no kind.
+   Without a closing status you get nudged, then marked `agent:lost`.
 
 ## Identity
 

@@ -18,7 +18,7 @@ description: "Use when setting up or operating unstrikeable. Config repo, instan
     - ~/.hermes/profiles/kevin/skills
   agents:
     kevin:                           # only agents hosted here
-      meter: {type: hermes, profile: kevin}   # cost meter, needed for cost quotas
+      meter: {type: hermes, profile: kevin}   # cost quotas + per-task tokens/cost (`state_db:` to override the path)
       app_id: 123456                 # optional: GitHub App; without it, the instance's `gh` auth is used
       app_key: ~/.unstrikeable/keys/kevin.pem
   ```
@@ -66,6 +66,11 @@ their own agent installs the instance and stops at the human gates.
 
 - Slack: two `--no-agent` crons in the admin profile, `uns digest --alerts` every 15 min (silent when nothing) and
   `uns digest` every morning, delivered to the human's channel.
+- Task metrics: `uns report [--days 30] [--by agent,kind|role|trigger|department|outcome] [--json]` reads
+  `state/tasks-<a>.jsonl` (one line per closed task: outcome, kind, wall time, nudges, tokens, cost). Per-task
+  tokens/cost come from the profile's `state.db` (Bot Chat lineage only, read-only); `HERMES_HOME` must be the
+  agent's own, or set `meter.state_db`. Unknown schema or file = cost unknown, time still counted. Task kinds are
+  the flow's `kinds` list; a department replaces it with `overrides: kinds: [...]`.
 - Updates: `uns update` (upgrade, reinstall skills in `skills_dirs`, dry-run every hosted agent); as a cron every 6 h
   once trusted. `uns check` says whether the installed runtime matches the config's `runtime:` pin.
 

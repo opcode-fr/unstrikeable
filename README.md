@@ -47,6 +47,7 @@ uns poll --agent kevin --dry-run   # what Kevin would receive right now
 | `uns hire PRESET [--as NAME] [--department D]` / `--list` | admins | add an agent from a preset |
 | `uns app form --org O --agent A` / `uns app exchange CODE --agent A` | admins | create the agent's GitHub App |
 | `uns digest [--alerts]` | cron | Slack summary, or only new alerts (silent otherwise) |
+| `uns report [--days 30] [--by agent,kind] [--json]` | human | closed tasks: outcomes, time, tokens, cost per group |
 | `uns update` | cron / admins | upgrade runtime, reinstall skills, dry-run every agent |
 | `uns check` | admins | validate the config |
 | `uns token --agent A` | admins | GitHub App token of an agent |

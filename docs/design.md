@@ -224,6 +224,13 @@ playbooks:                      # instructions handed to the agent, per role.tri
 
 artifact:
   path: "{yyyy}/{mm}/{channel}-{dd}-{slug}.md"
+
+kinds:                          # nature of the work, chosen by the agent when it closes a task
+  - post
+  - article
+  - newsletter
+  - research
+  - other
 ```
 
 - Agents and the CLI speak **logical keys** (`uns move <ref> review`), never column names.
@@ -243,6 +250,11 @@ artifact:
   ```
 - System labels (`needs:human`, `agent:pause`, `agent:lost`,
   `spec:question`) are fixed and shared by every flow.
+- `kinds` is a **closed list** of task kinds (lowercase slugs) used to classify work in `uns report`. What it is
+  for: comparing time and cost per kind of work (a bug vs a feature, a post vs an article). What breaks without
+  it: nothing, tasks are simply not classified (`--kind` is then neither asked nor accepted). Limits: the kind is
+  the agent's judgement, not a human label; keep an `other` entry so it never has to pick a wrong one. A department
+  replaces the whole list through `overrides: kinds:` (shallow merge).
 
 ## 4. Triggers (closed set, coded and tested)
 
@@ -300,6 +312,22 @@ class Forge(Protocol):            # GitHub, GitLab…; optional (a content flow 
   raised, and only a human resumes it. No meter or no quota = no cost check (event budgets still apply).
 - **Reports**: `uns digest --alerts` every 15 min (silent when nothing happens) and `uns digest` every morning:
   per agent, current task, events today, cost today / 30 days, paused or not.
+- **Task accounting**: every closed task (one delivered event, from delivery to `done`, `blocked`, `lost` or the
+  item gone) becomes one line of `state/tasks-<a>.jsonl`: agent, ref, role, trigger, kind, outcome, wall time,
+  nudges, runs and review rounds on the item, and the tokens and cost the task used. `uns report --by agent,kind`
+  aggregates them (count, outcomes, median time, total and median cost, tokens with cache apart, nudges per task);
+  `--json` gives the raw lines.
+  - **Time** = wall time from delivery to the agent's closing status: one event is one turn of work, so it is
+    close to the working time, not the ticket's lead time (a ticket made of several events has several lines).
+  - **Tokens and cost**: the Hermes meter reads the profile's `state.db` (read-only) and sums the counters of the
+    canonical `Bot Chat` session and its children (compression rotations, subagents), where board events are
+    delivered. The poll snapshots these counters at delivery and again at the poll that sees the task closed;
+    the difference is the task. One task at a time per agent makes the attribution exact, and Slack chats of
+    the same profile are left out. The snapshot at close is taken after the turn, so its tail is counted.
+    Cost = Hermes' estimate at list price, not the bill. No meter (Kiro) = time only.
+  - **Kind**: `uns status … --state done --kind <k>` is required when the flow declares `kinds`; it is stored in
+    the status marker (`kind=…`), so the poll reads it from the board like the rest of the status.
+  - Nothing is published on the board: costs stay on the instance (public repos would expose them).
 - **Security**: content from non-members is ignored; an item created by an agent waits for a human signal
   (a human comment or an assignment label) before a planner/PM spends anything on it; assignment = human
   validation of the item; external content
@@ -370,6 +398,11 @@ The only exception to "no agent pushes to a default branch": `memory/agents/<sel
 - CLI name: `uns`.
 - CLI agents run through one generic command (`uns run … -- <cmd>`, event on stdin) rather than one adapter per
   tool: the lock and the poll are coded and tested once; a tool only needs a wrapper script and an agent file.
+- Task cost = difference of cumulative counters (snapshot at delivery, snapshot at close) rather than counting
+  per session: Hermes reuses one `Bot Chat` session for every event, so a session is not a task. Reading
+  `state.db` couples us to Hermes' schema: an unreadable schema gives an unknown cost, never a failed poll.
+- Task kinds are declared by the agent at closing, from a closed list in the flow, rather than read from issue
+  labels: every task gets one, with no human discipline needed. Costs are not written on the board.
 
 ## 12. Open questions
 
