@@ -328,6 +328,14 @@ class Forge(Protocol):            # GitHub, GitLab…; optional (a content flow 
   - **Kind**: `uns status … --state done --kind <k>` is required when the flow declares `kinds`; it is stored in
     the status marker (`kind=…`), so the poll reads it from the board like the rest of the status.
   - Nothing is published on the board: costs stay on the instance (public repos would expose them).
+  - **One reader of the Hermes database**: an agent isolated in its own OS account (terminal over SSH) must not
+    read `state.db` (it holds every conversation of the profile). The cron wrapper runs in the Hermes owner's
+    account, reads the counters with `uns usage --profile <p>` and pipes them to the agent's
+    `uns poll --usage-from -` (`integrations/hermes/uns_poll_isolated.sh`): the agent only gets six numbers, taken
+    at the same poll ticks as a local meter would. Piped counters win over a local meter.
+  - **One place for reports**: `tasks_dir` in `local.yml` points every instance of the machine to one shared
+    directory (created by the admin, sticky like `/tmp`: `mkdir -m 1777`); each `tasks-<a>.jsonl` is owned by its
+    agent's account and readable by the others (644), so a single `uns report` covers isolated agents too.
 - **Security**: content from non-members is ignored; an item created by an agent waits for a human signal
   (a human comment or an assignment label) before a planner/PM spends anything on it; assignment = human
   validation of the item; external content
@@ -401,6 +409,9 @@ The only exception to "no agent pushes to a default branch": `memory/agents/<sel
 - Task cost = difference of cumulative counters (snapshot at delivery, snapshot at close) rather than counting
   per session: Hermes reuses one `Bot Chat` session for every event, so a session is not a task. Reading
   `state.db` couples us to Hermes' schema: an unreadable schema gives an unknown cost, never a failed poll.
+- Isolated agents get their usage from a single reader (the Hermes owner's account) through the poll's stdin,
+  rather than read access to `state.db` (it would expose every conversation and break the isolation) or a
+  periodic sampler joined after the fact (same precision, more code).
 - Task kinds are declared by the agent at closing, from a closed list in the flow, rather than read from issue
   labels: every task gets one, with no human discipline needed. Costs are not written on the board.
 

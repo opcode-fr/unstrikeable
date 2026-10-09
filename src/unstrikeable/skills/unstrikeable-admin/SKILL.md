@@ -71,6 +71,11 @@ their own agent installs the instance and stops at the human gates.
   tokens/cost come from the profile's `state.db` (Bot Chat lineage only, read-only); `HERMES_HOME` must be the
   agent's own, or set `meter.state_db`. Unknown schema or file = cost unknown, time still counted. Task kinds are
   the flow's `kinds` list; a department replaces it with `overrides: kinds: [...]`.
+- Agent isolated in its own OS account: never give it read access to `state.db` (every conversation of the
+  profile). Use `integrations/hermes/uns_poll_isolated.sh`: the Hermes owner's account runs `uns usage` and pipes
+  the counters to the agent's `uns poll --usage-from -`. For one report across accounts, create a shared dir once
+  (`mkdir -m 1777 /Users/Shared/uns/tasks`, the agent would create it 700) and set `tasks_dir:` to it in every
+  `local.yml` of the machine.
 - Updates: `uns update` (upgrade, reinstall skills in `skills_dirs`, dry-run every hosted agent); as a cron every 6 h
   once trusted. `uns check` says whether the installed runtime matches the config's `runtime:` pin.
 
