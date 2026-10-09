@@ -65,6 +65,8 @@ copy `uns_poll.sh` into the profile's `scripts/` with `__AGENT__` replaced, then
 `hermes -p <profile> cron create "every <poll_min>m" --name uns-<agent> --script uns_poll_<agent>.sh --no-agent --deliver bot-chat --paused`.
 Explain it and get a human go before `cron resume`: from then on the agent writes on the board.
 Install the `unstrikeable-agent` skill in the agent's profile.
+Optional, to see each agent's cost and output (PRs, commits, tickets) live in an OTLP backend (Grafana): the
+`hermes-otel-usage` plugin in `integrations/hermes/otel-usage/` (README there; no message content is sent).
 
 ## Kiro (and other CLI agents)
 

@@ -1,0 +1,8 @@
+name: hermes-otel-usage
+version: "0.1.0"
+description: "Per-call usage telemetry (tokens, estimated cost, tool actions) for Hermes profiles that call the model API directly, sent as OTLP log events (service.name=hermes). No message content: counters and ids only."
+author: "opcode"
+provides_hooks:
+  - post_api_request
+  - post_auxiliary_call
+  - post_tool_call
