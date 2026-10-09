@@ -83,7 +83,9 @@ their own agent installs the instance and stops at the human gates.
 
 - `uns pause --agent <a> [--reason …]` / `uns resume --agent <a>`: one agent. `uns pause` / `uns resume`: the instance.
 - `limits.max_cost_per_day` / `max_cost_per_month` in `config.yml`: reached → the agent pauses itself and raises an
-  alert; only `uns resume` restarts it. The Hermes meter counts the whole profile (Slack chats included).
+  alert; only `uns resume` restarts it. Board work only (closed tasks + the task in progress, Bot Chat counters):
+  Slack chats do not count. Day = calendar day, month = rolling 30 days; history starts empty on upgrade. Needs a
+  `meter` in `local.yml`, or the piped counters of `uns_poll_isolated.sh`.
 - Memory: `memory.curator` in `config.yml`. The curator's PR on the config repo must be reviewed by a human:
   shared memory is read by every agent, it is the main injection risk.
 

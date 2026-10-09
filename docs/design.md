@@ -306,10 +306,14 @@ class Forge(Protocol):            # GitHub, GitLab…; optional (a content flow 
 - **Budgets**: `max_events_per_day`, `max_runs` per item, `max_review_rounds` → `needs:human`.
 - **Kill switches**: `agent:pause` label (item), `uns pause --agent <a>` (one agent), `uns pause` (the instance).
   A paused agent receives nothing, not even nudges, until `uns resume`.
-- **Cost quotas**: `max_cost_per_day` / `max_cost_per_month` (USD). The cost comes from a **meter** declared per agent
-  in `local.yml` (v0: `{type: hermes, profile: <p>}`, which reads `hermes -p <p> insights`; it counts everything the
-  profile spent, not only board work). Read at most every 15 min. Quota reached → the agent is paused, an alert is
-  raised, and only a human resumes it. No meter or no quota = no cost check (event budgets still apply).
+- **Cost quotas**: `max_cost_per_day` (calendar day, local time) / `max_cost_per_month` (rolling 30 days), USD,
+  **board work only**: the sum of the agent's closed tasks (`spend` in the poll state, from the task accounting
+  below) plus what the task in progress has used so far, checked at every poll. The counters come from the **meter**
+  declared per agent in `local.yml` (`{type: hermes, profile: <p>}`, the Bot Chat counters) or are piped by the
+  single reader for an isolated agent. Slack chats of the profile do not count. Quota reached → the agent is
+  paused, an alert is raised, and only a human resumes it (resuming while still over the cap pauses it again at
+  the next poll: raise the cap or wait for the window). No counters or no quota = no cost check (event budgets
+  still apply). The history starts with the first task closed by this version: no back-fill.
 - **Reports**: `uns digest --alerts` every 15 min (silent when nothing happens) and `uns digest` every morning:
   per agent, current task, events today, cost today / 30 days, paused or not.
 - **Task accounting**: every closed task (one delivered event, from delivery to `done`, `blocked`, `lost` or the
@@ -409,6 +413,9 @@ The only exception to "no agent pushes to a default branch": `memory/agents/<sel
 - Task cost = difference of cumulative counters (snapshot at delivery, snapshot at close) rather than counting
   per session: Hermes reuses one `Bot Chat` session for every event, so a session is not a task. Reading
   `state.db` couples us to Hermes' schema: an unreadable schema gives an unknown cost, never a failed poll.
+- Cost quotas count board work only, from the same counters as the task records, rather than `hermes insights`
+  (whole profile, Slack included, and not runnable from an isolated account): a long Slack conversation with a
+  human must not pause the agent's board work, and one mechanism serves both reports and quotas.
 - Isolated agents get their usage from a single reader (the Hermes owner's account) through the poll's stdin,
   rather than read access to `state.db` (it would expose every conversation and break the isolation) or a
   periodic sampler joined after the fact (same precision, more code).
