@@ -89,3 +89,10 @@ def test_private_member_seen_as_none_by_an_app_token_is_not_outside_when_he_can_
             c["authorAssociation"] = "NONE"
     it = parse_issue(n, "Ready", FLOW, REAL_BOTS, can_write=lambda login: login == "jlestel")
     assert it.outsider_at == ""
+
+
+def test_ci_bot_comment_on_our_agents_pr_is_not_outside_content():
+    n = json.loads((DATA / "gh_issue_jul52.json").read_text())          # PR #55 of gerard + a github-actions comment
+    it = parse_issue(n, "Ready", FLOW, REAL_BOTS)
+    assert it.outsider_at == "" and not needs_vetting(it)
+    assert not any(c.trusted for c in it.comments if c.author == "github-actions")   # still not a human go

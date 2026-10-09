@@ -14,6 +14,7 @@ from ..status import parse_status
 
 TRUSTED = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 AGENT_RE = re.compile(r"<!-- (?:uns|gha):agent=(\S+) -->")      # gha = legacy gh-agents markers
+PLATFORM_BOTS = frozenset({"github-actions"})   # runs the repo's own workflows: not outside content, not a human
 CI = {"SUCCESS": "SUCCESS", "FAILURE": "FAILURE", "ERROR": "FAILURE", "PENDING": "PENDING", "EXPECTED": "PENDING"}
 
 ISSUE_FIELDS = """
@@ -97,7 +98,8 @@ def parse_comment(c: dict, bots: set[str], can_write: Callable[[str], bool] | No
 def outsider_at(n: dict, bots: set[str], can_write: Callable[[str], bool] | None = None) -> str:
     """Newest content written by a non-member: issue body, comments, linked PRs, their comments and reviews."""
     def outside(x: dict) -> bool:
-        return not _trusted(x.get("authorAssociation"), _login(x.get("author")), bots, can_write)
+        login = _login(x.get("author"))
+        return login not in PLATFORM_BOTS and not _trusted(x.get("authorAssociation"), login, bots, can_write)
 
     nodes = [n] + n["comments"]["nodes"]
     for p in (n.get("closedByPullRequestsReferences") or {}).get("nodes") or []:

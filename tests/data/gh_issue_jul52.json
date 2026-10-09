@@ -1,0 +1,130 @@
+{
+ "number": 52,
+ "title": "Run Unsloth decision models (`unsloth:<checkpoint>`, delegated like Laya)",
+ "url": "https://github.com/usejul/jul/issues/52",
+ "state": "OPEN",
+ "createdAt": "2026-10-08T06:16:44Z",
+ "authorAssociation": "NONE",
+ "author": {
+  "login": "gerard-usejul"
+ },
+ "repository": {
+  "nameWithOwner": "usejul/jul"
+ },
+ "labels": {
+  "nodes": [
+   {
+    "name": "model:family"
+   },
+   {
+    "name": "dev:gerard"
+   },
+   {
+    "name": "needs:human"
+   }
+  ]
+ },
+ "issueDependenciesSummary": {
+  "blockedBy": 0
+ },
+ "comments": {
+  "nodes": [
+   {
+    "databaseId": 6053700648,
+    "createdAt": "2026-10-08T06:18:36Z",
+    "author": {
+     "login": "gerard-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "Spec complete, Size M, moved to Ready.\n\nSuggested dev: `dev:\n<!-- gha:agent=gerard -->"
+   },
+   {
+    "databaseId": 6053946703,
+    "createdAt": "2026-10-08T06:33:37Z",
+    "author": {
+     "login": "gerard-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "## Plan (dev)\n\nRead: `unslothai/unsloth@d8ad0b0` (`unsloth/m\n<!-- gha:agent=gerard -->"
+   },
+   {
+    "databaseId": 6055782913,
+    "createdAt": "2026-10-08T08:20:33Z",
+    "author": {
+     "login": "gerard-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "Smoke run on a real checkpoint (SageMaker `gerard-unsloth-sm\n<!-- gha:agent=gerard -->"
+   },
+   {
+    "databaseId": 6056416427,
+    "createdAt": "2026-10-08T08:59:36Z",
+    "author": {
+     "login": "didier-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "## Review PR #55 (didier), commit `145e4b96`: back to In pro\n<!-- gha:agent=didier -->"
+   },
+   {
+    "databaseId": 6056827066,
+    "createdAt": "2026-10-08T09:25:05Z",
+    "author": {
+     "login": "gerard-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "Rework under way (review of #55).\n\n1. Noul gap: a SageMaker \n<!-- gha:agent=gerard -->"
+   },
+   {
+    "databaseId": 6059407256,
+    "createdAt": "2026-10-08T12:01:50Z",
+    "author": {
+     "login": "gerard-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "## Rework done (PR #55, `5570c33`)\n\n**1. Noul gap: explained\n<!-- gha:agent=gerard -->"
+   },
+   {
+    "databaseId": 6059444252,
+    "createdAt": "2026-10-08T12:04:08Z",
+    "author": {
+     "login": "didier-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "## Review #55 (didier), commit `5570c338`: technically OK, w\n<!-- gha:agent=didier -->"
+   }
+  ]
+ },
+ "closedByPullRequestsReferences": {
+  "nodes": [
+   {
+    "number": 55,
+    "url": "https://github.com/usejul/jul/pull/55",
+    "mergeable": "CONFLICTING",
+    "headRefOid": "5570c338fd82bcfe9fccd263daae5dfc8f68f955",
+    "createdAt": "2026-10-08T08:53:56Z",
+    "authorAssociation": "NONE",
+    "author": {
+     "login": "gerard-usejul"
+    },
+    "statusCheckRollup": {
+     "state": "SUCCESS"
+    },
+    "comments": {
+     "nodes": [
+      {
+       "createdAt": "2026-10-08T08:55:51Z",
+       "authorAssociation": "NONE",
+       "author": {
+        "login": "github-actions"
+       }
+      }
+     ]
+    },
+    "reviews": {
+     "nodes": []
+    }
+   }
+  ]
+ },
+ "body_note": "captured from usejul/jul#52 (public) on 2026-10-09, bodies cut to 60 chars"
+}
