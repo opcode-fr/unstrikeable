@@ -241,7 +241,13 @@ def test_a_label_set_by_a_human_still_wins():
 
 
 def test_auto_assignment_only_where_the_role_is_assigned():
-    assert kinds("gerard", [by("brice", "doing")], trusting()) == []    # dev reacts in doing only when named
+    talk = Item("acme/app", 1, "t", "doing", [], author="brice", comments=[human(5, "status?")])
+    assert kinds("gerard", [talk], trusting()) == []                   # dev reacts in doing only when named
+
+
+def test_a_listed_login_that_is_no_longer_trusted_gets_nothing():
+    gone = Item("acme/app", 1, "t", "ready", [], author="brice", author_trusted=False)
+    assert kinds("gerard", [gone], trusting()) == []
 
 
 def test_an_item_written_by_an_agent_is_never_auto_assigned():
