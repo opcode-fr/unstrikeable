@@ -176,3 +176,8 @@ def test_set_field_picks_the_option_by_name():
     mutation = [v for q, v in calls if q.startswith("mutation")][0]
     assert (mutation["f"], mutation["o"]) == ("F", "m")
     assert calls[0][1]["f"] == "Size"
+
+
+def test_issue_author_login_is_kept_for_trusted_authors():
+    assert parse_issue(node(author={"login": "Brice"}), "Ready", FLOW, BOTS).author == "brice"
+    assert parse_issue(node(), "Ready", FLOW, BOTS).author == ""
