@@ -1,6 +1,7 @@
 """In-memory board for tests."""
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 from unstrikeable.model import Comment, Item
@@ -42,7 +43,9 @@ class FakeBoard:
         self.calls.append(("comment", ref, body))
         self._next += 1
         it = self._items[ref]
-        self.set(ref, comments=it.comments + [Comment(self._next, "bot", True, body=body)])
+        m = re.search(r"<!-- uns:agent=(\S+) -->", body)          # like the GitHub backend: marker = agent
+        self.set(ref, comments=it.comments + [Comment(self._next, "bot", True, agent=m.group(1) if m else None,
+                                                      body=body)])
 
     def upsert_status(self, ref, agent, body):
         self.calls.append(("status", ref, agent))

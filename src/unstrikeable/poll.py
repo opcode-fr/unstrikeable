@@ -8,14 +8,15 @@ from __future__ import annotations
 import copy
 import hashlib
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from .backends.base import Board
 from .config import DEFAULT_MEMORY, Company, Department
-from .events import Event, events_for
+from .events import Event, events_for, needs_vetting
 from .memory import curation_due, inbox, read_memory
 from .meter import Usage, usage_delta
-from .model import AGENT_MARK, BLOCKING, Item
+from .model import AGENT_MARK, BLOCKING, VETTING, Item
 from .status import hhmm, lease_step, parse_status
 
 MAX_BODY = 3000
@@ -166,6 +167,9 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
         _alert(work, now, "-", "%s paused: %s. `uns resume --agent %s` to restart." % (agent, reason, agent))
         return _finish(state, work, seen, "", dry_run)
 
+    # 0b. vetting gate, busy or not: outside content waits for a member's go before any agent reads it
+    items_of = {name: _vet(agent, boards[name], boards[name].items(), dry_run) for name in depts}
+
     # 1. lease of the current task
     cur = work["current"]
     if cur:
@@ -193,7 +197,7 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
         if work["day_count"] >= limits["max_events_per_day"]:
             break
         board = boards[dept.name]
-        items = board.items()
+        items = items_of[dept.name]
         if not dry_run:
             _flag_ambiguous(agent, dept, board, items)
         for ev in events_for(agent, dept, items):
@@ -297,6 +301,27 @@ def _record(work: dict, agent: str, cur: dict, dept: Department | None, it: Item
     work["finished"] = (work.get("finished") or []) + [rec]
     if rec["usage"]:
         work["spend"] = (work.get("spend") or []) + [[end, rec["usage"]["cost"]]]
+
+
+def _vet(agent: str, board: Board, items: list[Item], dry_run: bool) -> list[Item]:
+    """Set `needs:vetting` on items with unanswered outside content, lift it once a member commented after it.
+    Returns the items as they now are, so this poll already skips them (also in dry-run)."""
+    out = []
+    for it in items:
+        want, has = needs_vetting(it), VETTING in it.labels
+        if want and not has:
+            if not dry_run:
+                board.labels(it.ref, add=[VETTING])
+                board.comment(it.ref, "🔒 Content from outside the team (not a member). Agents skip this item until "
+                              "a member has read it and comments here: any member comment is the go.\n\n"
+                              + AGENT_MARK % agent)
+            it = replace(it, labels=it.labels + [VETTING])
+        elif has and not want:
+            if not dry_run:
+                board.labels(it.ref, remove=[VETTING])
+            it = replace(it, labels=[label for label in it.labels if label != VETTING])
+        out.append(it)
+    return out
 
 
 def _flag_ambiguous(agent: str, dept: Department, board: Board, items: list[Item]) -> None:

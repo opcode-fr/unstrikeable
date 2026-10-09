@@ -315,3 +315,47 @@ def test_auto_assignment_puts_the_named_label_on_take(tmp_path):
     out = poll("kevin", co, {"marketing": board}, {}, T0)
     assert "writer.assigned" in out and "trusted author @brice" in out
     assert "writer:kevin" in board.item("acme/mkt#1").labels
+
+
+# ------------------------------------------------------------ vetting gate
+OUT = "2026-10-09T10:00:00Z"
+
+
+def outsider(n, labels=("writer:kevin",), **kw):
+    return Item("acme/mkt", n, "post %d" % n, "ready", list(labels), outsider_at=OUT, **kw)
+
+
+def test_outside_content_is_labelled_once_and_never_delivered(tmp_path):
+    board, state, co = FakeBoard([outsider(1)]), {}, company(tmp_path)
+    assert run(co, board, state) == ""
+    assert "needs:vetting" in board.item("acme/mkt#1").labels
+    assert [c[0] for c in board.calls] == ["labels", "comment"]
+    assert run(co, board, state, now=T0 + 60) == ""
+    assert [c[0] for c in board.calls] == ["labels", "comment"]          # no second comment
+
+
+def test_a_member_comment_after_the_outside_content_is_the_go(tmp_path):
+    board, state, co = FakeBoard([outsider(1)]), {}, company(tmp_path)
+    run(co, board, state)
+    board.set("acme/mkt#1", comments=board.item("acme/mkt#1").comments
+              + [Comment(9, "brice", True, body="go", created="2026-10-09T11:00:00Z")])
+    out = run(co, board, state, now=T0 + 60)
+    assert "acme/mkt#1" in out
+    assert "needs:vetting" not in board.item("acme/mkt#1").labels
+
+
+def test_a_busy_agent_still_gates_and_its_task_on_that_item_ends(tmp_path):
+    board, state, co = FakeBoard([item(1), outsider(2, labels=())]), {}, company(tmp_path)
+    run(co, board, state)
+    assert state["current"]["ref"] == "acme/mkt#1"
+    board.set("acme/mkt#1", outsider_at=OUT)                               # an outsider comments mid-task
+    run(co, board, state, now=T0 + 60)
+    assert "needs:vetting" in board.item("acme/mkt#1").labels
+    assert "needs:vetting" in board.item("acme/mkt#2").labels
+    assert state["current"] is None
+
+
+def test_dry_run_gates_without_writing(tmp_path):
+    board, state, co = FakeBoard([outsider(1)]), {}, company(tmp_path)
+    assert run(co, board, state, dry=True) == ""
+    assert board.calls == []

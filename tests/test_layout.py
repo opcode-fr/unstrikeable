@@ -35,7 +35,8 @@ def test_expected_labels_cover_staff_system_and_extra_labels():
     flow = load_flow("content", overrides={"labels": ["channel:x"]})
     d = Department("marketing", flow, {}, ["acme/mkt"], {"kevin": ["planner", "writer"]})
     names = set(expected_labels(d))
-    assert {"writer:kevin", "spec:question", "needs:human", "agent:pause", "agent:lost", "channel:x"} <= names
+    assert {"writer:kevin", "spec:question", "needs:human", "agent:pause", "agent:lost", "needs:vetting",
+            "channel:x"} <= names
     assert not any(n.startswith("planner") for n in names)          # unlabelled role
 
 

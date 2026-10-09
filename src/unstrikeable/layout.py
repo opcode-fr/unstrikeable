@@ -8,6 +8,7 @@ SYSTEM_LABELS = {
     "needs:human": ("d93f0b", "Blocked: a human must step in"),
     "agent:pause": ("b60205", "Kill switch: no agent touches this item"),
     "agent:lost": ("5c5c5c", "Agent went silent: check it, remove the label to resume"),
+    "needs:vetting": ("e4572e", "Outside content: a member reads it, then comments to give the go"),
 }
 # Colour rule: warm & saturated = a human must act (system labels), cold & saturated = an agent holds the item
 # (one colour per role, `label_colors` in the flow), pastel = description only (one per prefix, from overrides).
