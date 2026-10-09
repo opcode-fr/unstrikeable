@@ -15,6 +15,7 @@ from .backends.base import Board
 from .config import DEFAULT_MEMORY, Company, Department
 from .events import Event, events_for
 from .memory import curation_due, inbox, read_memory
+from .meter import Usage, usage_delta
 from .model import AGENT_MARK, BLOCKING, Item
 from .status import hhmm, lease_step, parse_status
 
@@ -137,7 +138,7 @@ def check_quota(work: dict, limits: dict, meter: Meter | None, now: int) -> str 
 
 # ---------------------------------------------------------------- poll
 def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: int | None = None,
-         dry_run: bool = False, meter: Meter | None = None) -> str:
+         dry_run: bool = False, meter: Meter | None = None, usage: Usage | None = None) -> str:
     """Return the text to deliver to the agent ('' = nothing). Mutates `state` unless dry_run."""
     now = int(time.time()) if now is None else now
     work = state if not dry_run else copy.deepcopy(state)
@@ -162,7 +163,7 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
     # 1. lease of the current task
     cur = work["current"]
     if cur:
-        out = _lease(agent, co, boards, depts, work, seen, cur, now, dry_run)
+        out = _lease(agent, co, boards, depts, work, seen, cur, now, dry_run, usage)
         if out is not None:
             return _finish(state, work, seen, out, dry_run)
 
@@ -177,7 +178,8 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
             work["memory_pending"] += due
             work["memory_status"] = None
             work["current"] = {"key": key, "ref": MEMORY_REF, "department": None, "trigger": "curator.curate",
-                               "files": due, "delivered0": now, "delivered": now, "retries": 0}
+                               "files": due, "delivered0": now, "delivered": now, "retries": 0,
+                               "usage0": usage() if usage else None}
             return _finish(state, work, seen, render_curation(co, agent, due), dry_run)
 
     # 3. free: pick the next board event, one at a time
@@ -205,7 +207,8 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
                         "do nothing else." % (work["runs"][ref], limits["max_runs"],
                                               work["reviews"].get(ref, 0), limits["max_review_rounds"]))
             work["current"] = {"key": ev.key, "ref": ref, "department": dept.name, "trigger": trigger,
-                               "delivered0": now, "delivered": now, "retries": 0}
+                               "delivered0": now, "delivered": now, "retries": 0, "title": ev.item.title,
+                               "usage0": usage() if usage else None}
             return _finish(state, work, seen, render(co, dept, ev, ev.item, agent, trigger, note), dry_run)
     return _finish(state, work, seen, "", dry_run)
 
@@ -221,7 +224,7 @@ def baseline(agent: str, co: Company, boards: dict[str, Board], state: dict) -> 
 
 
 def _lease(agent: str, co: Company, boards: dict[str, Board], depts: dict[str, Department], work: dict,
-           seen: set, cur: dict, now: int, dry_run: bool) -> str | None:
+           seen: set, cur: dict, now: int, dry_run: bool, usage: Usage | None = None) -> str | None:
     """Handle the current task. Returns the text to deliver ('' = wait/nothing), or None if the agent is free."""
     limits = co.limits_for(agent)
     memory_task = cur["ref"] == MEMORY_REF
@@ -236,6 +239,7 @@ def _lease(agent: str, co: Company, boards: dict[str, Board], depts: dict[str, D
         st = _my_status(it, agent) if it else None
     step = lease_step(cur, st, now, limits, gone)
     if step == "done":
+        _record(work, agent, cur, dept, it, "gone" if gone else st["state"], st, now, usage)
         work["current"] = None
         return None
     if step == "wait":
@@ -259,9 +263,27 @@ def _lease(agent: str, co: Company, boards: dict[str, Board], depts: dict[str, D
         _flag(board, cur["ref"], agent, "agent:lost",
               why + " `agent:lost` set: check the agent, then remove the label to resume.")
     seen.discard(cur["key"])                                   # re-delivered once a human removes the label
+    _record(work, agent, cur, dept, it, "lost", None, now, usage)
     work["current"] = None
     _alert(work, now, cur["ref"], why)
     return ""
+
+
+def _record(work: dict, agent: str, cur: dict, dept: Department | None, it: Item | None, outcome: str,
+            st: dict | None, now: int, usage: Usage | None) -> None:
+    """One line per closed task (time, tokens, cost, kind), flushed to state/tasks-<agent>.jsonl by the CLI.
+    The end snapshot is taken at the poll that sees the task closed, so the end of the agent's turn is counted."""
+    ref = cur["ref"]
+    closed_by_agent = outcome in ("done", "blocked") and st is not None
+    end = st["beat"] if closed_by_agent else now
+    kind = "curation" if ref == MEMORY_REF else ((st or {}).get("kind") if closed_by_agent else None)
+    rec = {"agent": agent, "ref": ref, "department": cur.get("department"), "flow": dept.flow.name if dept else None,
+           "role": cur["trigger"].split(".")[0], "trigger": cur["trigger"], "kind": kind, "outcome": outcome,
+           "start": cur["delivered0"], "end": end, "wall_s": max(0, end - cur["delivered0"]),
+           "retries": cur["retries"], "runs": work["runs"].get(ref, 0), "reviews": work["reviews"].get(ref, 0),
+           "title": it.title if it else cur.get("title"), "labels": list(it.labels) if it else None,
+           "usage": usage_delta(cur.get("usage0"), usage() if usage else None)}
+    work["finished"] = (work.get("finished") or []) + [rec]
 
 
 def _flag_ambiguous(agent: str, dept: Department, board: Board, items: list[Item]) -> None:

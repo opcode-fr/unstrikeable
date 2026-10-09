@@ -221,3 +221,67 @@ def test_baseline_marks_current_events_as_delivered_without_sending_them(tmp_pat
     assert run(co, board, state) == ""
     board.set("acme/mkt#2", comments=[mine, asked, Comment(10, "brice", True, body="new info")])
     assert "planner.human_comment" in run(co, board, state)      # new activity still flows
+
+
+# ---------------------------------------------------------------- task records (time, tokens, cost, kind)
+class Counter:
+    """Cumulative usage of the agent, as the Bot Chat reader would return it."""
+    def __init__(self):
+        self.u = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "reasoning": 0, "cost": 0.0}
+
+    def spend(self, out, cost):
+        self.u = {**self.u, "out": self.u["out"] + out, "cache_read": self.u["cache_read"] + 10 * out,
+                  "cost": self.u["cost"] + cost}
+
+    def __call__(self):
+        return dict(self.u)
+
+
+def runu(co, board, state, usage, now=T0, dry=False):
+    return poll("kevin", co, {"marketing": board}, state, now, dry_run=dry, usage=usage)
+
+
+def test_closed_task_leaves_a_record_with_time_kind_and_spend(tmp_path):
+    board, state, co, usage = FakeBoard([item(1)]), {}, company(tmp_path), Counter()
+    usage.spend(100, 1.0)                                    # spent before the task: not counted
+    runu(co, board, state, usage)
+    usage.spend(50, 0.25)
+    board.upsert_status("acme/mkt#1", "kevin", status_body("kevin", "done", T0 + 30, T0 + 600, kind="article"))
+    usage.spend(5, 0.05)                                     # end of the turn, after the status
+    runu(co, board, state, usage, now=T0 + 700)
+    [rec] = state["finished"]
+    assert rec["ref"] == "acme/mkt#1" and rec["agent"] == "kevin" and rec["department"] == "marketing"
+    assert rec["role"] == "writer" and rec["trigger"] == "writer.assigned" and rec["flow"] == "content"
+    assert rec["outcome"] == "done" and rec["kind"] == "article"
+    assert rec["start"] == T0 and rec["end"] == T0 + 600 and rec["wall_s"] == 600
+    assert rec["usage"]["out"] == 55 and rec["usage"]["cost"] == 0.3
+    assert rec["retries"] == 0 and rec["title"] == "post 1"
+
+
+def test_blocked_lost_and_closed_tasks_are_recorded_too(tmp_path):
+    co = company(tmp_path)
+    board, state = FakeBoard([item(1)]), {}
+    run(co, board, state)
+    board.upsert_status("acme/mkt#1", "kevin", status_body("kevin", "blocked", T0, T0 + 60))
+    run(co, board, state, now=T0 + 120)
+    assert state["finished"][-1]["outcome"] == "blocked" and state["finished"][-1]["usage"] is None
+
+    board, state = FakeBoard([item(1)]), {}
+    run(co, board, state)
+    run(co, board, state, now=T0 + 16 * 60)
+    run(co, board, state, now=T0 + 33 * 60)
+    assert state["finished"][-1]["outcome"] == "lost" and state["finished"][-1]["retries"] == 1
+
+    board, state = FakeBoard([item(1)]), {}
+    run(co, board, state)
+    board.close("acme/mkt#1")
+    run(co, board, state, now=T0 + 60)
+    assert state["finished"][-1]["outcome"] == "gone" and state["finished"][-1]["end"] == T0 + 60
+
+
+def test_dry_run_records_nothing(tmp_path):
+    board, state, co = FakeBoard([item(1)]), {}, company(tmp_path)
+    run(co, board, state)
+    board.upsert_status("acme/mkt#1", "kevin", status_body("kevin", "done", T0, T0 + 60))
+    run(co, board, state, now=T0 + 120, dry=True)
+    assert not state.get("finished")
