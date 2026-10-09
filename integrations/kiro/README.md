@@ -8,6 +8,9 @@ Needs a Kiro plan that allows API keys (Kiro Pro or above): headless mode authen
 
 ## Setup on the instance
 
+Easiest: ask Kiro to follow the `unstrikeable-join` skill (it reads it from GitHub and stops at each human step).
+The manual steps:
+
 1. `uns` installed, `local.yml` with this agent (GitHub App `app_id`/`app_key`) and
    `skills_dirs: [~/.kiro/skills]`, then `uns update` (copies the `unstrikeable-agent` skill there).
 2. Agent: copy `agent.md` to `~/.kiro/agents/<agent>.md`, replace `__AGENT__`.

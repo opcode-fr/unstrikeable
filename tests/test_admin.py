@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from unstrikeable.admin import app_form, app_exchange, update, version_ok
+from unstrikeable.admin import SKILLS, app_form, app_exchange, update, version_ok
 
 
 @pytest.mark.parametrize("version,spec,ok", [
@@ -57,3 +57,12 @@ def test_update_upgrades_copies_skills_and_dry_runs_each_agent(tmp_path):
 def test_update_reports_a_runtime_outside_the_pin(tmp_path):
     report = update({"agents": {}}, pin="<0.1", run=lambda args: "", version=lambda: "0.1.2")
     assert "does NOT match" in report
+
+
+def test_shipped_skills_follow_the_agent_skills_format():
+    """Kiro and Hermes load skills by front matter: `name` must equal the folder, `description` must say when."""
+    import yaml
+    for skill in (p for p in SKILLS.iterdir() if p.is_dir()):
+        meta = yaml.safe_load((skill / "SKILL.md").read_text().split("---")[1])
+        assert meta["name"] == skill.name
+        assert meta["description"].startswith("Use when")

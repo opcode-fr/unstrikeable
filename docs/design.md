@@ -315,7 +315,9 @@ The runtime **emits events** (text + JSON) and does not care who handles them. A
   (credits are not readable by `uns`): such an agent relies on `max_events_per_day` and its plan's credit cap.
 
 Foundation skills shipped: `unstrikeable-agent` (handling an event, the CLI, status) and
-`unstrikeable-admin` (setup, align, adding an agent, updates). Flow playbooks plug into them.
+`unstrikeable-admin` (setup, align, adding an agent, updates) and `unstrikeable-join` (an agent sets up the
+machine it runs on, read from GitHub before install; human gates for the App code, secrets and the start).
+Flow playbooks plug into them.
 
 ## 8. Memory
 

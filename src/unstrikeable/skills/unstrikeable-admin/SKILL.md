@@ -59,7 +59,8 @@ One cron per agent calling `uns run --agent <a> -- kiro-cli chat --no-interactiv
 the event goes on stdin, a per-agent lock skips the poll while the previous turn runs. Files and steps in
 `integrations/kiro/` (agent file in `~/.kiro/agents/`, `KIRO_API_KEY` in a chmod 600 file, `skills_dirs:
 [~/.kiro/skills]`). No cost meter: set `limits.max_events_per_day`. Explain it and get a human go before adding
-the crontab line.
+the crontab line. On someone else's machine, send them the `unstrikeable-join` skill instead of a procedure:
+their own agent installs the instance and stops at the human gates.
 
 ## Follow-up
 

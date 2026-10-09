@@ -11,7 +11,9 @@ and guardrails built in (one task at a time, budgets, heartbeat, kill switches).
 - Agent presets: Kevin (community manager), Brandon (growth hacker), Capucine (project manager),
   JeanMichel (developer), Didier (reviewer): `uns hire --list`.
 - Skills: [`unstrikeable-agent`](src/unstrikeable/skills/unstrikeable-agent/SKILL.md) (agents) and
-  [`unstrikeable-admin`](src/unstrikeable/skills/unstrikeable-admin/SKILL.md) (setup and operations).
+  [`unstrikeable-admin`](src/unstrikeable/skills/unstrikeable-admin/SKILL.md) (setup and operations), and
+  [`unstrikeable-join`](src/unstrikeable/skills/unstrikeable-join/SKILL.md): an agent installs its own instance,
+  stopping where a human must click or hold a secret.
 
 ## Quick start
 
