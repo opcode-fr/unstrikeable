@@ -437,7 +437,8 @@ class Board(Protocol):            # GitHub Projects today; Trello, Linear, Jiraâ
   the label is lifted once a member comments after that content (any comment is the go). Why: agents read items
   with `gh`, so an outsider's comment on a vetted issue of a public repo would reach them unfiltered. Limits: a
   task already running may read it before the next poll; removing the label by hand does not count as the go
-  (the next poll sets it again).
+  (the next poll sets it again). `github-actions` comments are neither outside content (the repo's own workflows;
+  a fork PR is already gated by its author) nor a member's go.
 - **Security**: content from non-members is ignored; an item created by an agent waits for a human signal
   (a human comment or an assignment label) before a planner/PM spends anything on it; assignment = human
   validation of the item (a label set by a human, or an item written by a human of `trusted_authors`); external
