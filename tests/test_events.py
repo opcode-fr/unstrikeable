@@ -207,7 +207,8 @@ def test_an_assignment_label_vets_an_agent_created_item():
 # ---------------------------------------------------------------- trusted authors (assignment without a label)
 def trusting(authors=("brice",)):
     d = dept()
-    return Department(d.name, d.flow, d.board, d.repos, d.staff, trusted_authors=list(authors))
+    m = authors if isinstance(authors, dict) else {a: None for a in authors}
+    return Department(d.name, d.flow, d.board, d.repos, d.staff, trusted_authors=m)
 
 
 def by(author, state="ready", labels=(), n=1, agent=None):
@@ -252,3 +253,16 @@ def test_a_listed_login_that_is_no_longer_trusted_gets_nothing():
 
 def test_an_item_written_by_an_agent_is_never_auto_assigned():
     assert kinds("gerard", [by("capucine-acme", agent="capucine-acme")], trusting(["capucine-acme"])) == []
+
+
+def test_a_trusted_author_can_be_routed_to_one_agent():
+    d = trusting({"brice": None, "jerome": "jeanmichel"})
+    assert kinds("gerard", [by("jerome")], d) == []                      # first idle dev, but not Jerome's agent
+    evs = events_for("jeanmichel", d, [by("jerome")])
+    assert [(e.role, e.trigger) for e in evs] == [("dev", "assigned")] and evs[0].auto_label == "dev:jeanmichel"
+
+
+def test_a_routed_item_waits_for_its_busy_agent():
+    d = trusting({"jerome": "jeanmichel"})
+    items = [by("jerome", n=2), by("x", "doing", ["dev:jeanmichel"], n=1)]
+    assert kinds("jeanmichel", items, d) == [] and kinds("gerard", items, d) == []

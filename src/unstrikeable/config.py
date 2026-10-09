@@ -112,7 +112,8 @@ class Department:
     board: dict[str, Any]
     repos: list[str]
     staff: dict[str, list[str]]
-    trusted_authors: list[str] = field(default_factory=list)   # humans whose items need no assignment label
+    # humans whose items need no assignment label: login (lowercase) -> agent that takes them, None = first idle
+    trusted_authors: dict[str, str | None] = field(default_factory=dict)
 
     def staff_with(self, role: str) -> list[str]:
         return [a for a, roles in self.staff.items() if role in roles]
@@ -193,20 +194,25 @@ def load_flow(name: str, overrides: dict | None = None, search: list[Path] | Non
                 _kinds(name, raw.get("kinds")))
 
 
-def _trusted_authors(dept: str, raw: Any, agents: dict) -> list[str]:
-    """Logins of humans whose items are assigned without a label. Humans only: an agent on this list would let
-    an agent that read a booby-trapped issue hand work to another agent with no human in between."""
+def _trusted_authors(dept: str, raw: Any, agents: dict, staff: dict) -> dict[str, str | None]:
+    """Humans whose items are assigned without a label: a list of logins (first idle staff member takes them) or
+    a mapping login -> agent of the staff (that agent takes them, waiting if busy). Humans only: an agent here
+    would let an agent that read a booby-trapped issue hand work to another agent with no human in between."""
     if raw is None:
-        return []
-    if not isinstance(raw, list) or not all(isinstance(a, str) and a.strip() for a in raw):
-        raise ConfigError("%s: trusted_authors must be a list of GitHub logins" % dept)
+        return {}
+    if isinstance(raw, list):
+        raw = {a: None for a in raw}
+    if not isinstance(raw, dict) or not all(isinstance(a, str) and a.strip() for a in raw):
+        raise ConfigError("%s: trusted_authors must list GitHub logins (optionally login: agent)" % dept)
     machines = {str(n).lower() for n in agents} | {
         str(a.get("identity", "")).lower() for a in agents.values() if isinstance(a, dict) and a.get("identity")}
-    for login in raw:
+    for login, agent in raw.items():
         bare = login.lower().replace("[bot]", "")
         if login.lower().endswith("[bot]") or bare in machines:
             raise ConfigError("%s: trusted_authors are humans only, %r is an agent or a bot" % (dept, login))
-    return [a.lower() for a in raw]
+        if agent is not None and agent not in staff:
+            raise ConfigError("%s: trusted_authors routes %s to %r, who is not in the staff" % (dept, login, agent))
+    return {login.lower(): agent for login, agent in raw.items()}
 
 
 KIND_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -242,6 +248,6 @@ def load_company(root: Path | str) -> Company:
                 if r not in flow.roles:
                     raise ConfigError("%s: %s has role %r, not in flow %s" % (name, a, r, flow.name))
         depts[name] = Department(name, flow, dict(d.get("board") or {}), list(d.get("repos") or []), staff,
-                                 _trusted_authors(name, d.get("trusted_authors"), agents))
+                                 _trusted_authors(name, d.get("trusted_authors"), agents, staff))
     return Company(root, depts, agents, {**DEFAULT_LIMITS, **(raw.get("limits") or {})}, raw.get("forge"),
                    str(raw.get("runtime") or ""), {**DEFAULT_MEMORY, **(raw.get("memory") or {})})

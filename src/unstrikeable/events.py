@@ -69,6 +69,9 @@ def owner(role: Role, dept: Department, item: Item, items: list[Item]) -> str | 
     if any(p in item.labels for p in role.pool_labels()):
         return next((a for a in eligible if not busy(a, dept, items)), None)
     if trusted_take(role, dept, item):
+        target = {k.lower(): v for k, v in dept.trusted_authors.items()}[item.author.lower()]
+        if target:                                        # routed: that agent only, the item waits while it is busy
+            return target if target in eligible else None
         return next((a for a in eligible if not busy(a, dept, items)), None)
     if not role.labelled or role.auto:
         return eligible[0] if eligible else None

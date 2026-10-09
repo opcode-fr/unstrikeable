@@ -307,7 +307,7 @@ def test_dry_run_records_nothing(tmp_path):
 # ---------------------------------------------------------------- trusted authors
 def test_auto_assignment_puts_the_named_label_on_take(tmp_path):
     flow = load_flow("content")
-    d = Department("marketing", flow, {}, ["acme/mkt"], {"kevin": ["writer"]}, trusted_authors=["brice"])
+    d = Department("marketing", flow, {}, ["acme/mkt"], {"kevin": ["writer"]}, trusted_authors={"brice": None})
     co = Company(Path(tmp_path), {"marketing": d}, {"kevin": {}}, dict(DEFAULT_LIMITS))
     board = FakeBoard([Item("acme/mkt", 1, "post", "ready", [], author="brice")])
     out = poll("kevin", co, {"marketing": board}, {}, T0, dry_run=True)

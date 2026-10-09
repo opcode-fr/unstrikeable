@@ -225,7 +225,20 @@ TRUSTING = MINIMAL.replace("        staff:\n", "        trusted_authors:\n      
 
 def test_trusted_authors_are_read_per_department(tmp_path):
     write(tmp_path, "config.yml", TRUSTING)
-    assert load_company(tmp_path).departments["marketing"].trusted_authors == ["brice"]
+    assert load_company(tmp_path).departments["marketing"].trusted_authors == {"brice": None}
+
+
+def test_trusted_authors_map_a_human_to_the_agent_that_takes_their_items(tmp_path):
+    write(tmp_path, "config.yml", MINIMAL.replace("        staff:\n", "        trusted_authors:\n"
+                                                  "          Brice:\n          jerome: kevin\n        staff:\n"))
+    assert load_company(tmp_path).departments["marketing"].trusted_authors == {"brice": None, "jerome": "kevin"}
+
+
+def test_routing_to_an_agent_outside_the_staff_is_refused(tmp_path):
+    write(tmp_path, "config.yml", MINIMAL.replace("        staff:\n", "        trusted_authors:\n"
+                                                  "          jerome: brandon\n        staff:\n"))
+    with pytest.raises(ConfigError, match="brandon"):
+        load_company(tmp_path)
 
 
 @pytest.mark.parametrize("who", ["kevin", "kevin-acme", "Kevin-Acme[bot]", "dependabot[bot]"])
