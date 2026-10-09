@@ -428,3 +428,33 @@ def test_init_needs_no_instance_and_then_checks_clean(tmp_path, monkeypatch, cap
     monkeypatch.setenv("UNS_HOME", str(home))
     assert cli.main(["check"]) == 0
     assert "rnd: flow dev, 0 staff" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------ memory-publish
+def test_only_the_curator_publishes_memory(env, capsys):
+    assert cli.main(["memory-publish", "--agent", "kevin", "--summary", "x"]) == 2
+    assert "only the curator" in capsys.readouterr().err
+
+
+def test_memory_publish_hands_the_configured_reviewer_to_publish(env, monkeypatch, capsys):
+    home, _ = env
+    cfg = home.parent / "company" / "config.yml"
+    cfg.write_text(cfg.read_text() + "memory:\n  curator: kevin\n")
+    (home / "local.yml").write_text((home / "local.yml").read_text() + "memory_review:\n  - cat\n")
+    got = {}
+
+    def fake(root, agent, summary, review, gh, env=None, now=None):
+        got.update(agent=agent, summary=summary, answer=review("SAFE\nprompt on stdin"))
+        return "published"
+    monkeypatch.setattr(cli, "publish", fake)
+    assert cli.main(["memory-publish", "--agent", "kevin", "--summary", "kept 2"]) == 0
+    assert got == {"agent": "kevin", "summary": "kept 2", "answer": "SAFE\nprompt on stdin"}
+    assert "published" in capsys.readouterr().out
+
+
+def test_memory_review_must_be_a_command_list():
+    assert cli.reviewer(None) is None
+    with pytest.raises(cli.UsageError):
+        cli.reviewer("hermes -z")
+    with pytest.raises(RuntimeError):
+        cli.reviewer(["false"])("prompt")

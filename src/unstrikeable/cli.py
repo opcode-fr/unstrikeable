@@ -18,9 +18,9 @@ import yaml
 from . import admin
 from .backends.base import Board
 from .backends.github import GitHubBoard, GitHubError
-from .config import Company, ConfigError, Department, load_company
+from .config import DEFAULT_MEMORY, Company, ConfigError, Department, load_company
 from .digest import digest
-from .memory import commit_and_push, pull, write_entry
+from .memory import commit_and_push, publish, pull, write_entry
 from .meter import hermes_state_db, make_usage, parse_usage, read_bot_chat_usage
 from .model import AGENT_MARK
 from .poll import MEMORY_REF, baseline, poll
@@ -416,6 +416,47 @@ def cmd_remember(a: argparse.Namespace) -> None:
     print("%s %s" % ("proposed to the team" if a.share else "noted", path.relative_to(co.root)))
 
 
+def reviewer(argv: object):
+    """`memory_review` of local.yml: a command that reads the review prompt on stdin and answers on stdout,
+    with a model that has no tools. None when not configured (curated memory then always goes to a PR)."""
+    if not argv:
+        return None
+    if not isinstance(argv, list) or not all(isinstance(x, str) for x in argv):
+        raise UsageError("local.yml: memory_review must be a list of strings (a command and its arguments)")
+    cmd = [os.path.expanduser(x) for x in argv]
+
+    def review(prompt: str) -> str:
+        p = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=300)
+        if p.returncode != 0:
+            raise RuntimeError("memory_review exited %d: %s" % (p.returncode, p.stderr.strip()[:200]))
+        return p.stdout
+    return review
+
+
+def cmd_memory_publish(a: argparse.Namespace) -> None:
+    local = load_local()
+    co = load(local)
+    curator = {**DEFAULT_MEMORY, **co.memory}.get("curator")
+    if a.agent != curator:
+        raise UsageError("only the curator (%s) publishes curated memory" % curator)
+    summary = Path(a.summary_file).read_text() if a.summary_file else (a.summary or "")
+    if not summary.strip():
+        raise UsageError("say what was kept, merged, dropped and rejected (--summary or --summary-file)")
+    owner = next((d.board.get("owner") for d in co.departments_of(a.agent)), "")
+    token = agent_token(a.agent, owner) if owner else None
+    env = {**os.environ, "GH_TOKEN": token} if token else None             # push and PR as the agent's App
+
+    def gh(args: list[str]) -> str:
+        p = subprocess.run(["gh", *args], cwd=co.root, env=env, capture_output=True, text=True)
+        if p.returncode != 0:
+            raise UsageError("gh %s: %s" % (" ".join(args[:2]), p.stderr.strip()[:300]))
+        return p.stdout
+    try:
+        print(publish(co.root, a.agent, summary, reviewer(local.get("memory_review")), gh, env=env))
+    except (ValueError, RuntimeError) as e:
+        raise UsageError(str(e)) from e
+
+
 def cmd_pause(a: argparse.Namespace) -> None:
     if not a.agent:
         home().mkdir(parents=True, exist_ok=True)
@@ -561,6 +602,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--body-file")
     p.add_argument("--share", action="store_true")
     p.set_defaults(fn=cmd_remember)
+    p = sp.add_parser("memory-publish", help="curator: publish curated memory (reviewed: default branch, else a PR)")
+    p.add_argument("--agent", required=True)
+    p.add_argument("--summary")
+    p.add_argument("--summary-file")
+    p.set_defaults(fn=cmd_memory_publish)
     p = sp.add_parser("pause", help="kill switch: one agent (--agent) or the whole instance")
     p.add_argument("--agent")
     p.add_argument("--reason")
