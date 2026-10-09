@@ -60,3 +60,9 @@ def test_closed_or_silenced_item_ends_the_task():
 def test_legacy_gha_status_is_parsed():
     body = "<!-- gha:status agent=kevin state=working since=1 beat=5 -->"
     assert parse_status(body, "kevin") == {"state": "working", "since": 1, "beat": 5}
+
+
+def test_done_status_carries_the_task_kind():
+    body = status_body("kevin", "done", T0, T0 + 60, kind="bug")
+    assert parse_status(body, "kevin") == {"state": "done", "since": T0, "beat": T0 + 60, "kind": "bug"}
+    assert "· bug" in body.splitlines()[0]

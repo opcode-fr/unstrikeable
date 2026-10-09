@@ -1,6 +1,7 @@
 """Flows (templates) and the company config (config.yml)."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -86,6 +87,7 @@ class Flow:
     playbooks: dict[str, str] = field(default_factory=dict)
     extra_labels: list[str] = field(default_factory=list)
     artifact: dict[str, Any] = field(default_factory=dict)
+    kinds: list[str] = field(default_factory=list)     # closed list: the agent classifies each task it closes
 
     def column(self, key: str) -> str:
         for s in self.states:
@@ -186,7 +188,21 @@ def load_flow(name: str, overrides: dict | None = None, search: list[Path] | Non
         roles[rname] = Role(rname, list(labels), on, bool(r.get("human")), bool(r.get("auto")))
 
     return Flow(name, states, roles, dict(raw.get("playbooks") or {}),
-                list(raw.get("extra_labels") or []) + list(extra), dict(raw.get("artifact") or {}))
+                list(raw.get("extra_labels") or []) + list(extra), dict(raw.get("artifact") or {}),
+                _kinds(name, raw.get("kinds")))
+
+
+KIND_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def _kinds(flow: str, raw: Any) -> list[str]:
+    """Task kinds: lowercase slugs, no duplicates (they become report columns and a CLI choice)."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not all(isinstance(k, str) and KIND_RE.match(k) for k in raw) \
+            or len(set(raw)) != len(raw):
+        raise ConfigError("flow %s: kinds must be a list of unique lowercase slugs, got %r" % (flow, raw))
+    return list(raw)
 
 
 def load_company(root: Path | str) -> Company:

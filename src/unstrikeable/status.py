@@ -6,7 +6,7 @@ import time
 
 from .model import AGENT_MARK
 
-STATUS_RE = re.compile(r"<!-- (?:uns|gha):status agent=(\S+) state=(\w+) since=(\d+) beat=(\d+) -->")
+STATUS_RE = re.compile(r"<!-- (?:uns|gha):status agent=(\S+) state=(\w+) since=(\d+) beat=(\d+)(?: kind=(\S+))? -->")
 STATES = ("working", "done", "blocked")
 
 
@@ -16,12 +16,15 @@ def hhmm(ts: int) -> str:
     return time.strftime("%H:%M" if same_day else "%d/%m %H:%M", t)
 
 
-def status_body(agent: str, state: str, since: int, now: int, done: str = "", todo: str = "", note: str = "") -> str:
+def status_body(agent: str, state: str, since: int, now: int, done: str = "", todo: str = "", note: str = "",
+                kind: str = "") -> str:
     head = {
         "working": "🟢 **%s** · working since %s · last activity %s",
         "done": "✅ **%s** · done (started %s) · %s",
         "blocked": "⏸️ **%s** · waiting for a human (since %s) · %s",
     }[state] % (agent, hhmm(since), hhmm(now))
+    if kind:
+        head += " · %s" % kind
     lines = [head, ""]
     if done:
         lines.append("**Done**: %s" % done)
@@ -30,7 +33,8 @@ def status_body(agent: str, state: str, since: int, now: int, done: str = "", to
     if note:
         lines.append(note)
     lines += ["", AGENT_MARK % agent,
-              "<!-- uns:status agent=%s state=%s since=%d beat=%d -->" % (agent, state, since, now)]
+              "<!-- uns:status agent=%s state=%s since=%d beat=%d%s -->" % (
+                  agent, state, since, now, " kind=%s" % kind if kind else "")]
     return "\n".join(lines)
 
 
@@ -38,7 +42,10 @@ def parse_status(body: str, agent: str) -> dict | None:
     m = STATUS_RE.search(body or "")
     if not m or m.group(1) != agent:
         return None
-    return {"state": m.group(2), "since": int(m.group(3)), "beat": int(m.group(4))}
+    st = {"state": m.group(2), "since": int(m.group(3)), "beat": int(m.group(4))}
+    if m.group(5):
+        st["kind"] = m.group(5)
+    return st
 
 
 def lease_step(cur: dict, st: dict | None, now: int, limits: dict, gone: bool = False) -> str:

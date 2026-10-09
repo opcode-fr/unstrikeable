@@ -33,6 +33,13 @@ roles:
   reviewer:                     # you: review the PR, publish, then merge
     human: true
 
+kinds:                          # nature of the work, set by the agent when it closes a task (`--kind`)
+  - post
+  - article
+  - newsletter
+  - research
+  - other
+
 playbooks:
   planner.item_new: playbooks/content/brief.md
   planner.human_comment: playbooks/content/brief.md

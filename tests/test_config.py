@@ -201,3 +201,19 @@ def test_agent_limits_override_company_limits(tmp_path):
     assert co.limits_for("kevin")["max_cost_per_day"] == 30
     assert co.limits_for("kevin")["max_events_per_day"] == 10
     assert co.limits_for("nobody")["max_cost_per_day"] == 5
+
+
+# ---------------------------------------------------------------- task kinds (classification for reports)
+def test_shipped_flows_declare_a_closed_list_of_kinds():
+    assert "bug" in load_flow("dev").kinds and "other" in load_flow("dev").kinds
+    assert "article" in load_flow("content").kinds
+
+
+def test_kinds_can_be_replaced_by_the_department():
+    assert load_flow("dev", {"kinds": ["spike", "fix"]}).kinds == ["spike", "fix"]
+
+
+@pytest.mark.parametrize("kinds", [["bug", "bug"], ["Bug Fix"], "bug"])
+def test_invalid_kinds_are_rejected(kinds):
+    with pytest.raises(ConfigError, match="kinds"):
+        load_flow("dev", {"kinds": kinds})

@@ -36,6 +36,16 @@ roles:
       review:
         - pr_updated
 
+kinds:                          # nature of the work, set by the agent when it closes a task (`--kind`)
+  - feature
+  - bug
+  - refactor
+  - docs
+  - test
+  - ops
+  - research
+  - other
+
 playbooks:
   pm.item_new: playbooks/dev/spec.md
   pm.human_comment: playbooks/dev/spec.md
