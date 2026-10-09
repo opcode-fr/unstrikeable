@@ -59,7 +59,8 @@ agents:
   AGENT:
     app_key: ~/.unstrikeable/keys/AGENT.pem
     # app_id: filled at step 4
-    # hermes only: meter: {type: hermes, profile: <profile>}
+    # hermes only, same OS account as Hermes:
+    # meter: {type: hermes, profile: <profile>, state_db: <hermes home>/profiles/<profile>/state.db}
 ```
 Check: `uns check` runs clean and prints the runtime pin as matching.
 
@@ -91,7 +92,8 @@ Kiro (`integrations/kiro/`):
    It must answer without an auth or agent error (exit code 4 = agent file not found).
 
 Hermes: follow the `Hermes` section of the `unstrikeable-admin` skill (wrapper in `integrations/hermes/`, cron
-created `--paused`), and put the agent's `UNS_HOME` in the profile's `.env`.
+created `--paused`), and put the agent's `UNS_HOME` in the profile's `.env`. If the agent's terminal runs in
+another OS account than Hermes, use `uns_poll_isolated.sh` and no `meter` (that account must not read `state.db`).
 
 Both: in every clone the agent pushes from, make git use the App token instead of the human's account:
 ```sh

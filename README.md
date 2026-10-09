@@ -31,6 +31,9 @@ uns layout                         # dry-run: columns and labels the board needs
 uns poll --agent kevin --dry-run   # what Kevin would receive right now
 ```
 
+Instance settings (`local.yml`), several companies on one machine, isolated agents:
+[design §2 and §6](docs/design.md).
+
 ## Commands
 
 | Command | For | What |
@@ -38,7 +41,8 @@ uns poll --agent kevin --dry-run   # what Kevin would receive right now
 | `uns poll --agent A [--dry-run]` | cron | next event for A, or nothing |
 | `uns run --agent A -- CMD…` | cron | poll, then hand the event to a CLI agent on stdin (one turn at a time) |
 | `uns move REF STATE --agent A` | agents | move an item to a logical state |
-| `uns status REF --agent A --state working\|done\|blocked` | agents | heartbeat comment |
+| `uns status REF --agent A --state working\|done\|blocked` | agents | heartbeat comment; `done` needs `--learned` (and `--kind` if the flow has kinds) |
+| `uns set REF FIELD VALUE --agent A` | agents | single-select field of the board (Size, Priority…) |
 | `uns comment REF --agent A --body-file F` | agents | signed comment |
 | `uns label REF --agent A --add/--remove L` | agents | state labels (never assignments) |
 | `uns remember --agent A --title T --body-file F [--share]` | agents | private note, or proposal to the team |
@@ -51,6 +55,7 @@ uns poll --agent kevin --dry-run   # what Kevin would receive right now
 | `uns usage --profile p` | cron wrapper | Bot Chat counters of a Hermes profile, piped to an isolated agent's `poll --usage-from -` |
 | `uns update` | cron / admins | upgrade runtime, reinstall skills, dry-run every agent |
 | `uns check` | admins | validate the config |
+| `uns baseline --agent A` | admins | migration: mark current events as delivered, send nothing |
 | `uns token --agent A` | admins | GitHub App token of an agent |
 
 ## Development

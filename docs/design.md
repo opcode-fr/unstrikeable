@@ -2,7 +2,8 @@
 
 > *The company that never goes on strike.*
 
-Status: **v0, approved**. Implementation in progress.
+Status: **v0.1 and v0.2 implemented** (core, GitHub backend, memory, kill switches, cost quotas, task accounting),
+in daily use by one company on two instances. Open points: §12.
 
 ## 0. Goals and non-goals
 
@@ -20,8 +21,8 @@ Status: **v0, approved**. Implementation in progress.
 | | Runtime (this repo) | Config repo (one per company) |
 |---|---|---|
 | Contains | code, `uns` CLI, backends, foundation skills, flow profiles, docs | `config.yml`, culture, agents, team skills, memory |
-| Versioning | `vX.Y.Z` tags | free |
-| Installed as | Python package (`uv tool install`), version pinned by the config | cloned / read through the backend API |
+| Versioning | `version` in `pyproject.toml`; release tags to come (§12) | free |
+| Installed as | Python package (`uv tool install git+…`), version range declared by the config | cloned on each instance |
 | Secrets | never | never |
 
 No fork: teams customise through their config repo. Fork only to change the runtime itself, then contribute upstream.
@@ -44,10 +45,7 @@ memory/
 Example:
 
 ```yaml
-runtime: ">=0.1,<0.2"
-
-forge:                          # shared by every department that needs one
-  type: github
+runtime: ">=0.1,<0.2"            # checked by `uns check` (not enforced at install, see §9)
 
 departments:
   marketing:
@@ -102,7 +100,7 @@ agents:                         # identity and hosting, independent of departmen
 limits:
   poll_min: 5
   max_events_per_day: 10
-  max_cost_per_day: 20          # USD, read from the agent runtime; reached = the agent is paused
+  max_cost_per_day: 20          # USD, board work only (§6); reached = the agent is paused
   max_cost_per_month: 300       # rolling 30 days
 
 memory:
@@ -116,6 +114,50 @@ Vocabulary:
 - A **department** is a running instance of a flow: one board, its repos, its staff.
 - **Roles are per department**: Kevin is `writer` in marketing; the same agent could be `reviewer` elsewhere.
   `limits` apply per agent, across all its departments.
+
+### `local.yml`: the instance
+
+An **instance** is one machine account that runs `uns poll` for some agents. Its directory is `$UNS_HOME`
+(default `~/.unstrikeable`, chmod 700): `local.yml` (chmod 600, never versioned), `state/` (poll state per agent,
+token cache), `PAUSE` (kill switch of the instance).
+
+```yaml
+instance: mac-mini                # name of this instance; must equal agents.<a>.instance in config.yml
+config: ~/acme-hq                 # local clone of the config repo (pulled at every poll)
+skills_dirs:                      # where `uns update` copies the shipped skills (one per agent profile)
+  - ~/.hermes/profiles/kevin/skills
+tasks_dir: /Users/Shared/uns/tasks  # optional: where task logs go (default: $UNS_HOME/state)
+agents:                           # only the agents hosted here
+  kevin:
+    app_id: 123456                # GitHub App of the agent
+    app_key: ~/.unstrikeable/keys/kevin.pem
+    meter:                        # optional: tokens and cost (task accounting, cost quotas)
+      type: hermes
+      profile: kevin
+      state_db: ~/.hermes/profiles/kevin/state.db   # optional, default $HERMES_HOME/profiles/<profile>/state.db
+```
+
+- `instance`: guards against two machines serving one agent (see below). Without it, no check is made.
+- `config`: every command reads the company from this clone. Wrong path = every command fails with a clear error.
+- `skills_dirs`: without it, `uns update` upgrades the runtime but leaves old skills in the profiles, and agents
+  follow outdated instructions (e.g. a closing command missing a required flag).
+- `tasks_dir`: one directory shared by several instances of the same machine (agents isolated in their own OS
+  accounts), so a single `uns report` reads them all. Created once by the admin with `mkdir -m 1777`: an agent
+  would create it private. Logs stay owned by their agent, readable by others (644).
+- `app_id` / `app_key` (optional `installation_id`): the agent acts on GitHub as its App. Without them, `uns`
+  uses the instance's own `gh` login, so the agent writes as that human.
+- `meter`: without it, tasks get a time but no cost, and cost quotas are not checked. An agent isolated in
+  another OS account gets its counters piped by the Hermes owner's account instead (§6).
+
+### Several companies on one machine
+
+One `$UNS_HOME` per company: each holds its own `local.yml` (pointing to that company's config clone), state and
+kill switch. Every cron wrapper and every agent profile's `.env` exports the `UNS_HOME` of its company, so the
+agent's `uns status` writes to the same state as its poll. Give each company its own `tasks_dir` if you use one.
+
+**An agent (one Hermes profile, one Kiro agent) works for one company only.** Two states would each deliver it
+a task, breaking *one task at a time*, and both would read the same usage counters, counting the same spend twice
+in task costs and quotas. A person who works for two companies gets two agents (two profiles), one per company.
 
 ### `agents.<a>.instance`: where an agent runs
 
@@ -199,12 +241,10 @@ states:                         # order = column order
     column: Published
 
 roles:
-  planner:
+  planner:                      # no label: acts on every item, first planner of the staff
     on:                         # state -> triggers this role reacts to
       backlog:
         - item_new
-        - human_comment
-      ready:
         - human_comment
   writer:
     label: "writer:{agent}"
@@ -216,11 +256,15 @@ roles:
       approved:
         - pr_conflict
         - human_comment
-  reviewer:
+  reviewer:                     # a human: reviews the PR, publishes, then merges
     human: true
 
 playbooks:                      # instructions handed to the agent, per role.trigger
+  planner.item_new: playbooks/content/brief.md
+  planner.human_comment: playbooks/content/brief.md
   writer.assigned: playbooks/content/write.md
+  writer.human_comment: playbooks/content/rework.md
+  writer.pr_conflict: playbooks/content/conflict.md
 
 artifact:
   path: "{yyyy}/{mm}/{channel}-{dd}-{slug}.md"
@@ -239,9 +283,11 @@ kinds:                          # nature of the work, chosen by the agent when i
   - **with `{agent}`** (`writer:{agent}`): named assignment, one label per staff member (`writer:kevin`).
   - **without** (`to-write`): pool assignment, any idle staff member holding that role may take the item.
   The pool is resolved **deterministically** (first idle staff member, in `staff` order): every poller computes
-  the same answer from the same board, with no coordination. On take, the runtime swaps the pool label for the
-  named one (`to-write` → `writer:kevin`) so the board shows who works on what. If two agents still end up on
-  the same item (race between polls), the existing rule applies: two named labels → `needs:human`.
+  the same answer from the same board, with no coordination. Two named labels for one role → `needs:human`.
+  Not done yet: swapping the pool label for the named one on take (§12); until then the holder of a pool item
+  can change when the first holder becomes busy elsewhere. Shipped flows only use named labels.
+- A role without `label` acts on every item in its states (first staff member with the role); `auto: true`
+  does the same for a labelled role when the item carries none of its labels (the `dev` reviewer).
   A flow may declare both forms for the same role:
   ```yaml
   label:
@@ -278,21 +324,26 @@ Delivery priority: work in progress (`pr_conflict`, `ci_failed`, `human_comment`
 Two interfaces, because GitHub plays two roles and only one of them is replaceable by Trello & co.
 
 ```python
-class Board(Protocol):            # GitHub Projects, Trello, Linear, Jira…
-    def items(self) -> list[Item]: ...
-    def move(self, item: Ref, state: str) -> None: ...
-    def labels(self, item: Ref, add: list[str] = (), remove: list[str] = ()) -> None: ...
-    def comment(self, item: Ref, body: str) -> CommentId: ...
-    def upsert_comment(self, item: Ref, marker: str, body: str) -> None: ...   # status comment
-    def ensure_layout(self, flow: Flow, apply: bool) -> Plan: ...              # columns + labels
-
-class Forge(Protocol):            # GitHub, GitLab…; optional (a content flow on Trello needs none)
-    def linked_prs(self, item: Ref) -> list[PR]: ...                          # head, mergeable, ci, review
+class Board(Protocol):            # GitHub Projects today; Trello, Linear, Jira… when a project needs one
+    def items(self) -> list[Item]: ...                       # open items, with comments and linked PRs
+    def item(self, ref: str) -> Item | None: ...
+    def move(self, ref: str, column: str) -> None: ...
+    def set_field(self, ref: str, name: str, value: str) -> None: ...      # single-select fields (Size, Priority…)
+    def labels(self, ref: str, add=(), remove=()) -> None: ...
+    def comment(self, ref: str, body: str) -> None: ...
+    def upsert_status(self, ref: str, agent: str, body: str) -> None: ...  # one status comment per agent
+    def ensure_layout(self, dept: Department, apply=False, prune=False) -> list[str]: ...   # columns + labels
 ```
 
-- **v0 implements only `github-projects` and `github`**, both on top of the `gh` CLI (already authenticated,
-  handles pagination and GraphQL; agent tokens are passed through `GH_TOKEN`). The interface exists so the core
-  never depends on GraphQL; a Trello backend gets written when a real project needs it.
+- **Only `github-projects` is implemented**, on top of the `gh` CLI (already authenticated, handles pagination
+  and GraphQL; agent tokens are passed through `GH_TOKEN`). The interface exists so the core never depends on
+  GraphQL; a Trello backend gets written when a real project needs it.
+- The **forge** (PRs: head, mergeable, CI) is not a separate interface yet: linked PRs come with each item of the
+  GitHub board. It gets its own interface with the first board that is not on the forge (§12).
+- **Trust** (who the agents listen to): a comment or item counts only if its author is a member, collaborator or
+  owner, one of the company's agents (its App login), or, because an App token sees private org members as
+  `NONE`, a user with triage, write, maintain or admin permission on the repo (cached for one poll). Agent markers (`<!-- uns:agent=… -->`,
+  status comments) count only on trusted comments, else anyone could impersonate an agent.
 - Agents **never** touch the board directly (no `gh project …` in skills): everything goes through `uns`.
   `git` and `gh pr` stay allowed (that is the forge).
 - Identity is the backend's job (one GitHub App per agent; on Trello, one member per bot). The core only sees a token.
@@ -300,6 +351,10 @@ class Forge(Protocol):            # GitHub, GitLab…; optional (a content flow 
 ## 6. Runtime core
 
 - **Poll**: `uns poll --agent <a>` every `poll_min`; empty output = zero tokens spent. Events are deduplicated by key.
+  It first pulls the config clone (agents push memory there), then: kill switches and quotas, the current task,
+  memory curation (curator only), then at most one new event.
+- **Migration**: `uns baseline --agent <a>` marks every event the agent would get now as delivered, sending
+  nothing: run once before the first real poll on a board that already has history.
 - **One task at a time** per agent; the next event is delivered only once the current task is `done` or `blocked`.
 - **Status**: a single comment per agent and per item (🟢 / ✅ / ⏸️, Done / Next), the heartbeat read from outside.
   Silent after `ack_min` → nudge; after `stale_min` → `agent:lost` + alert.
@@ -348,7 +403,9 @@ class Forge(Protocol):            # GitHub, GitLab…; optional (a content flow 
 ## 7. Agent integration (Hermes and others)
 
 The runtime **emits events** (text + JSON) and does not care who handles them. An adapter delivers them:
-- `hermes` (v0): `--no-agent` cron → the profile's `bot-chat` (turns are serialised per profile = natural per-agent lock).
+- `hermes`: `--no-agent` cron → the profile's `bot-chat` (turns are serialised per profile = natural per-agent lock).
+  `integrations/hermes/uns_poll.sh` when `uns` runs in the Hermes account, `uns_poll_isolated.sh` when the agent's
+  terminal runs in its own OS account over SSH (the wrapper pipes the usage counters, §6).
 - CLI agents (`kiro`, later Claude Code…): cron → `uns run --agent a -- <agent command>`. `uns run` polls, hands the
   event to the command on stdin and holds a per-agent lock (`state/run-<a>.lock`): while a turn runs, the next
   tick does not poll, so the event stays on the board. Kiro setup: `integrations/kiro/`. No cost meter for Kiro
@@ -378,30 +435,38 @@ Folders are split by **lifecycle**, not by owner, so the curator scans one place
    **Mandatory lesson at closing**: `uns status … --state done` requires `--learned "<rule> because <reason>"`
    (stored in the agent's private memory, or in the inbox with `--share-learned`) or `--learned none`.
    Without it, agents skip memory on short tasks and the same pitfalls come back.
-3. **`curator` role** (an existing agent may hold it): triggered when the inbox exceeds N entries or once a day,
-   it consolidates into `memory/shared/*.md` through **a PR** and removes the processed entries.
+3. **`curator` role** (`memory.curator`, an existing agent): triggered when the inbox holds `inbox_max` new
+   entries (default 10) or its oldest entry is older than `max_age_h` (default 24 h); it consolidates into
+   `memory/shared/*.md` through **a PR** and removes the processed entries. The curation task has no board item:
+   its status lives in the instance state (`uns status memory --agent <curator> …`).
 4. **Mandatory human review** of that PR: memory read by every agent is an injection vector
    (an agent that read a booby-trapped issue could contaminate the whole team). No auto-merge.
 5. **"Private" means not loaded by other agents, not secret**: anyone with read access to the config repo can read it.
    Hence no secrets, no credentials, no personal data anywhere under `memory/`.
-6. **Content**: reusable facts and procedures, no session logs. Each folder has a size cap (TBD); above it,
-   the owner (or the curator for `shared/`) condenses instead of piling up.
+6. **Content**: reusable facts and procedures, no session logs. Size caps (`memory.shared_max_words`, default
+   3000; `memory.private_max_words`, default 1500): above them the event carries a warning asking the owner (or the
+   curator for `shared/`) to condense instead of piling up.
 
 The only exception to "no agent pushes to a default branch": `memory/agents/<self>/` and `memory/inbox/<self>/` in the config repo.
 
 ## 9. Distribution and updates
 
 - Python ≥ 3.10 package; runtime dependencies: PyYAML and the `gh` CLI.
-- `uns update`: upgrades the runtime to the latest version allowed by the config's `runtime:` pin, reinstalls the
-  skills in every hosting profile (including profiles whose terminal runs under another account over SSH), then runs
-  `poll --dry-run` for each agent. A broken release only reaches instances whose pin allows it.
+- Install: `uv tool install git+https://github.com/opcode-fr/unstrikeable` (main). An instance whose agents run
+  under another OS account installs it in that account too (build the wheel, copy it, `uv tool install <wheel>`).
+- `uns update`: `uv tool upgrade unstrikeable`, copies the shipped skills into every `skills_dirs` entry, then
+  runs `poll --dry-run` for each hosted agent. Upgrade the runtime and the skills together: a new runtime can
+  require a flag that old skills do not mention.
+- The config's `runtime:` range is only **checked** (`uns check` says whether the installed version matches), not
+  enforced at upgrade: there are no release tags yet, so every instance follows `main` (§12).
 
 ## 10. Plan
 
-1. **v0.1**: core + GitHub backends + `dev` and `content` profiles + Hermes adapter + tests.
-   First pilot: a content board run by one writer agent (Kevin).
-2. **v0.2**: memory (private + shared) + curator, kill switches, cost quotas.
-3. Existing agent boards are migrated later, once v0.1 has run in production.
+1. **v0.1** (done): core + GitHub backend + `dev` and `content` flows + Hermes adapter + tests.
+2. **v0.2** (done): memory (private + shared) + curator, kill switches, cost quotas, CLI agents (`uns run`, Kiro),
+   migration from the previous system (`uns baseline`, legacy markers read).
+3. **v0.3** (done): task accounting (`uns report`, kinds), cost quotas on board work only, isolated agents.
+4. Next: see §12.
 
 ## 11. Decisions
 
@@ -427,3 +492,8 @@ The only exception to "no agent pushes to a default branch": `memory/agents/<sel
 - Content flow conversations (replies to comments): one file per conversation, one section per exchange,
   one item per reply to write — to confirm with real use.
 - Dedicated `unstrikeable` GitHub org: later, not urgent (the repo can be transferred without loss).
+- Release tags and an enforced `runtime:` range (today every instance follows `main`).
+- Pool labels: swap the pool label for the named one when an agent takes the item (§3).
+- A separate `Forge` interface, once a board that is not on the forge is needed (§5).
+- Proposed, to decide: `uns init` (starter config repo), `auto_merge` per department, trusted authors whose
+  items can be assigned without a human label.

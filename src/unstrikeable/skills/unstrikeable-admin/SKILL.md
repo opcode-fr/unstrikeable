@@ -16,12 +16,17 @@ description: "Use when setting up or operating unstrikeable. Config repo, instan
   config: ~/company                  # local clone of the config repo
   skills_dirs:                       # where `uns update` reinstalls the shipped skills
     - ~/.hermes/profiles/kevin/skills
+  tasks_dir: /Users/Shared/uns/tasks # optional: task logs shared by the instances of this machine
   agents:
     kevin:                           # only agents hosted here
       meter: {type: hermes, profile: kevin}   # cost quotas + per-task tokens/cost (`state_db:` to override the path)
       app_id: 123456                 # optional: GitHub App; without it, the instance's `gh` auth is used
       app_key: ~/.unstrikeable/keys/kevin.pem
   ```
+
+Every field is explained in `docs/design.md` §2 (what it is for, what breaks without it).
+Several companies on one machine: one `UNS_HOME` per company, exported by every cron wrapper and agent `.env`;
+an agent (profile) works for one company only, else its tasks and costs overlap.
 
 ## Where an agent runs (`instance`)
 
