@@ -21,7 +21,7 @@ from .backends.github import GitHubBoard, GitHubError
 from .config import Company, ConfigError, Department, load_company
 from .digest import digest
 from .memory import commit_and_push, pull, write_entry
-from .meter import make_meter, make_usage
+from .meter import hermes_state_db, make_meter, make_usage, parse_usage, read_bot_chat_usage
 from .model import AGENT_MARK
 from .poll import MEMORY_REF, baseline, poll
 from .presets import hire, list_presets
@@ -122,8 +122,10 @@ def department_of(co: Company, ref: str, name: str | None = None) -> Department:
 
 
 # ---------------------------------------------------------------- commands
-def next_event(agent: str, dry_run: bool = False) -> str:
-    """The text to hand to the agent ('' = nothing). Consumes the event unless dry_run."""
+def next_event(agent: str, dry_run: bool = False, piped_usage: str | None = None) -> str:
+    """The text to hand to the agent ('' = nothing). Consumes the event unless dry_run.
+    piped_usage: counters sent by the single reader of the Hermes database (isolated agent accounts); it wins
+    over a local meter. Invalid or empty = unknown cost."""
     if (home() / "PAUSE").exists():
         return ""
     local = load_local()
@@ -139,15 +141,20 @@ def next_event(agent: str, dry_run: bool = False) -> str:
     state = read_state(agent)
     boards = {d.name: make_board(co, d, agent) for d in co.departments_of(agent)}
     mcfg = ((local.get("agents") or {}).get(agent) or {}).get("meter")
-    out = poll(agent, co, boards, state, dry_run=dry_run, meter=make_meter(mcfg), usage=make_usage(mcfg))
+    usage = make_usage(mcfg)
+    if piped_usage is not None:
+        counters = parse_usage(piped_usage)
+        usage = lambda: counters                                       # noqa: E731
+    out = poll(agent, co, boards, state, dry_run=dry_run, meter=make_meter(mcfg), usage=usage)
     if not dry_run:
-        append_tasks(agent, state.pop("finished", None) or [])
+        append_tasks(agent, state.pop("finished", None) or [], local)
         write_state(agent, state)
     return "Load the `unstrikeable-agent` skill and handle this event.\n\n" + out if out else ""
 
 
 def cmd_poll(a: argparse.Namespace) -> None:
-    out = next_event(a.agent, a.dry_run)
+    piped = sys.stdin.read() if a.usage_from == "-" else None
+    out = next_event(a.agent, a.dry_run, piped)
     if out:
         print(out)
 
@@ -184,18 +191,22 @@ def read_state(agent: str) -> dict:
     return json.loads(p.read_text()) if p.exists() else {}
 
 
-def tasks_path(agent: str) -> Path:
-    return home() / "state" / ("tasks-%s.jsonl" % agent)
+def tasks_dir(local: dict) -> Path:
+    """Where task logs go. `tasks_dir` in local.yml: a directory shared by the agents' accounts (sticky, like
+    /tmp), so one `uns report` reads every agent; each log stays owned by its agent and only readable by others."""
+    return Path(os.path.expanduser(local["tasks_dir"])) if local.get("tasks_dir") else home() / "state"
 
 
-def append_tasks(agent: str, records: list[dict]) -> None:
+def append_tasks(agent: str, records: list[dict], local: dict) -> None:
     """Closed tasks, one JSON line each: append-only, the source of `uns report`."""
     if not records:
         return
-    p = tasks_path(agent)
-    p.parent.mkdir(parents=True, exist_ok=True)
+    d = tasks_dir(local)
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / ("tasks-%s.jsonl" % agent)
     with open(p, "a") as fh:
         fh.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in records)
+    os.chmod(p, 0o644)                                                  # the reader's account must read it
 
 
 def write_state(agent: str, state: dict) -> None:
@@ -334,7 +345,7 @@ def cmd_digest(a: argparse.Namespace) -> None:
 
 def cmd_report(a: argparse.Namespace) -> None:
     records = []
-    for p in sorted((home() / "state").glob("tasks-*.jsonl")):
+    for p in sorted(tasks_dir(load_local()).glob("tasks-*.jsonl")):
         records += [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
     records = [r for r in records if not a.agent or r.get("agent") == a.agent]
     if a.json:
@@ -347,6 +358,15 @@ def cmd_report(a: argparse.Namespace) -> None:
         print(report(records, [k.strip() for k in a.by.split(",") if k.strip()], int(time.time()), a.days))
     except ValueError as e:
         raise UsageError(str(e)) from e
+
+
+def cmd_usage(a: argparse.Namespace) -> None:
+    """The single reader: Bot Chat counters of a Hermes profile, as JSON, for `uns poll --usage-from -`."""
+    db = Path(os.path.expanduser(a.state_db)) if a.state_db else hermes_state_db(a.profile)
+    try:
+        print(json.dumps(read_bot_chat_usage(db)))
+    except Exception as e:
+        raise UsageError("cannot read %s: %s" % (db, e)) from e
 
 
 def cmd_app(a: argparse.Namespace) -> None:
@@ -444,6 +464,7 @@ def parser() -> argparse.ArgumentParser:
     p = sp.add_parser("poll", help="print the next event for an agent (empty = nothing)")
     p.add_argument("--agent", required=True)
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--usage-from", choices=["-"], help="read usage counters on stdin (from `uns usage`)")
     p.set_defaults(fn=cmd_poll)
     p = sp.add_parser("run", help="poll, then hand the event on stdin to a CLI agent: uns run --agent a -- <cmd>")
     p.add_argument("--agent", required=True)
@@ -503,6 +524,10 @@ def parser() -> argparse.ArgumentParser:
                                                        "flow, outcome")
     p.add_argument("--json", action="store_true", help="raw records, one JSON per line")
     p.set_defaults(fn=cmd_report)
+    p = sp.add_parser("usage", help="Bot Chat counters of a Hermes profile (JSON), piped to an isolated agent's poll")
+    p.add_argument("--profile", required=True)
+    p.add_argument("--state-db", help="path of state.db (default: $HERMES_HOME profile)")
+    p.set_defaults(fn=cmd_usage)
     p = sp.add_parser("app", help="create an agent's GitHub App: `form` (owner clicks), then `exchange CODE`")
     asp = p.add_subparsers(dest="action", required=True)
     f = asp.add_parser("form")

@@ -105,3 +105,12 @@ def test_usage_delta_is_what_the_task_spent():
     b = {"in": 11, "out": 22, "cache_read": 33, "cache_write": 44, "reasoning": 5, "cost": 0.35}
     assert usage_delta(a, b) == {"in": 10, "out": 20, "cache_read": 30, "cache_write": 40, "reasoning": 5, "cost": 0.25}
     assert usage_delta(b, a) is None and usage_delta(None, b) is None
+
+
+def test_piped_usage_is_parsed_and_checked():
+    from unstrikeable.meter import parse_usage
+    good = '{"in": 1, "out": 2, "cache_read": 3, "cache_write": 4, "reasoning": 0, "cost": 0.5}'
+    assert parse_usage(good)["cost"] == 0.5
+    for bad in ("", "null", "not json", '{"in": 1}', '{"in": "x", "out": 2, "cache_read": 3, "cache_write": 4, '
+                '"reasoning": 0, "cost": 0.5}'):
+        assert parse_usage(bad) is None

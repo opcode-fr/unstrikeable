@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import sqlite3
@@ -95,6 +96,17 @@ def make_usage(cfg: dict | None) -> Usage | None:
         except Exception:
             return None
     return usage
+
+
+def parse_usage(text: str) -> dict | None:
+    """Counters piped by the single reader (`uns usage … | ssh agent 'uns poll --usage-from -'`). None if invalid."""
+    try:
+        u = json.loads(text or "null")
+    except ValueError:
+        return None
+    if not isinstance(u, dict) or not all(isinstance(u.get(k), (int, float)) for k in USAGE_KEYS):
+        return None
+    return {k: u[k] for k in USAGE_KEYS}
 
 
 def usage_delta(start: dict | None, end: dict | None) -> dict | None:

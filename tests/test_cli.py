@@ -358,3 +358,59 @@ def test_poll_appends_closed_tasks_to_the_task_log_then_report_reads_it(env, cap
     assert "kevin · post · 1 task (1 done)" in capsys.readouterr().out
     assert cli.main(["report", "--json"]) == 0
     assert json.loads(capsys.readouterr().out.splitlines()[0])["ref"] == "acme/mkt#1"
+
+
+# ---------------------------------------------------------------- one usage reader, isolated agents
+def test_usage_prints_the_bot_chat_counters(tmp_path, capsys):
+    from test_meter import REAL, state_db
+    db = state_db(tmp_path, REAL)
+    assert cli.main(["usage", "--profile", "kevin", "--state-db", str(db)]) == 0
+    assert json.loads(capsys.readouterr().out)["out"] == 8074
+
+
+def test_usage_of_an_unreadable_database_fails_loudly(tmp_path, capsys):
+    assert cli.main(["usage", "--profile", "kevin", "--state-db", str(tmp_path / "nope.db")]) == 2
+    assert capsys.readouterr().out == ""
+
+
+def _pipe(monkeypatch, text):
+    import io
+    monkeypatch.setattr(sys, "stdin", io.StringIO(text))
+
+
+def _u(out, cost):
+    return json.dumps({"in": 1, "out": out, "cache_read": 10 * out, "cache_write": 0, "reasoning": 0, "cost": cost})
+
+
+def test_poll_takes_the_counters_piped_by_the_reader(env, monkeypatch, capsys):
+    home, _ = env
+    _pipe(monkeypatch, _u(100, 1.0))
+    assert cli.main(["poll", "--agent", "kevin", "--usage-from", "-"]) == 0
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--learned", "none",
+                     "--kind", "post"]) == 0
+    _pipe(monkeypatch, _u(160, 1.25))
+    assert cli.main(["poll", "--agent", "kevin", "--usage-from", "-"]) == 0
+    rec = json.loads((home / "state" / "tasks-kevin.jsonl").read_text())
+    assert rec["usage"]["out"] == 60 and rec["usage"]["cost"] == 0.25
+
+
+def test_task_log_goes_to_tasks_dir_readable_by_the_reader(env, tmp_path, capsys):
+    import stat
+    home, _ = env
+    shared = tmp_path / "shared"
+    (home / "local.yml").write_text((home / "local.yml").read_text() + "tasks_dir: %s\n" % shared)
+    import os
+    old_umask = os.umask(0o077)                     # agent accounts may run with a private umask
+    try:
+        assert cli.main(["poll", "--agent", "kevin"]) == 0
+        assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--learned", "none",
+                         "--kind", "post"]) == 0
+        assert cli.main(["poll", "--agent", "kevin"]) == 0
+    finally:
+        os.umask(old_umask)
+    log = shared / "tasks-kevin.jsonl"
+    assert log.exists() and not (home / "state" / "tasks-kevin.jsonl").exists()
+    assert stat.S_IMODE(log.stat().st_mode) == 0o644
+    capsys.readouterr()
+    assert cli.main(["report"]) == 0
+    assert "kevin · post · 1 task" in capsys.readouterr().out
