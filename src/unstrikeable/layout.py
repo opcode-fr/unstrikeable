@@ -9,8 +9,14 @@ SYSTEM_LABELS = {
     "agent:pause": ("b60205", "Kill switch: no agent touches this item"),
     "agent:lost": ("5c5c5c", "Agent went silent: check it, remove the label to resume"),
 }
+# Colour rule: warm & saturated = a human must act (system labels), cold & saturated = an agent holds the item
+# (one colour per role, `label_colors` in the flow), pastel = description only (one per prefix, from overrides).
 ROLE_COLOR = "1d76db"
 EXTRA_COLOR = "c5def5"
+
+
+def _color(flow, label: str, default: str) -> str:
+    return flow.label_colors.get(label.split(":", 1)[0], default)
 
 
 def expected_labels(dept: Department) -> dict[str, tuple[str, str]]:
@@ -19,12 +25,12 @@ def expected_labels(dept: Department) -> dict[str, tuple[str, str]]:
         for agent in dept.staff_with(rname):
             label = role.named_label(agent)
             if label:
-                want[label] = (ROLE_COLOR, "%s assigned as %s" % (agent, rname))
+                want[label] = (_color(dept.flow, label, ROLE_COLOR), "%s assigned as %s" % (agent, rname))
         for pool in role.pool_labels():
-            want[pool] = (ROLE_COLOR, "Any idle %s may take it" % rname)
+            want[pool] = (_color(dept.flow, pool, ROLE_COLOR), "Any idle %s may take it" % rname)
     want.update(SYSTEM_LABELS)
     for extra in dept.flow.extra_labels:
-        want.setdefault(extra, (EXTRA_COLOR, ""))
+        want.setdefault(extra, (_color(dept.flow, extra, EXTRA_COLOR), ""))
     return want
 
 

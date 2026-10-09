@@ -46,6 +46,10 @@ kinds:                          # nature of the work, set by the agent when it c
   - research
   - other
 
+label_colors:                   # one colour per role: saturated and cold = an agent holds the item
+  dev: 1d76db
+  review: 8250df
+
 playbooks:
   pm.item_new: playbooks/dev/spec.md
   pm.human_comment: playbooks/dev/spec.md

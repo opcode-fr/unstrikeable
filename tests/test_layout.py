@@ -43,3 +43,21 @@ def test_prune_drops_columns_outside_the_flow():
     have = [{"id": "a", "name": "Todo", "color": "GRAY", "description": ""}]
     opts, actions = plan_columns(have, ["Ideas"], prune=True)
     assert [o["name"] for o in opts] == ["Ideas"] and "- column 'Todo' (pruned)" in actions
+
+
+def test_label_colour_follows_the_prefix_role_colours_differ_and_overrides_add_extras():
+    flow = load_flow("dev", overrides={"labels": ["type:bench", "channel:x", "misc"],
+                                       "label_colors": {"type": "C5DEF5", "channel": "bfdadc"}})
+    d = Department("rnd", flow, {}, ["acme/x"], {"jm": ["dev"], "kiki": ["dev"], "didier": ["review"]})
+    want = expected_labels(d)
+    assert want["dev:jm"][0] == want["dev:kiki"][0] == "1d76db"         # one colour per role, not per agent
+    assert want["review:didier"][0] == "8250df"
+    assert want["type:bench"][0] == "c5def5" and want["channel:x"][0] == "bfdadc"
+    assert want["misc"][0] == "c5def5"                                      # undeclared prefix: default pastel
+    assert want["agent:pause"][0] == "b60205"                               # system labels keep theirs
+
+
+def test_override_colours_extend_the_flow_ones():
+    flow = load_flow("content", overrides={"label_colors": {"channel": "bfdadc"}})
+    d = Department("mkt", flow, {}, ["acme/m"], {"kevin": ["writer"]})
+    assert expected_labels(d)["writer:kevin"][0] == "006b75"

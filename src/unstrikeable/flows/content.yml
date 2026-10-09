@@ -40,6 +40,9 @@ kinds:                          # nature of the work, set by the agent when it c
   - research
   - other
 
+label_colors:                   # one colour per role: saturated and cold = an agent holds the item
+  writer: "006b75"
+
 playbooks:
   planner.item_new: playbooks/content/brief.md
   planner.human_comment: playbooks/content/brief.md

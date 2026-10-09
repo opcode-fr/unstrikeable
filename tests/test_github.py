@@ -113,6 +113,31 @@ def test_layout_dry_run_plans_without_writing():
     assert writes and writes[0]["f"] == "F"
 
 
+def test_layout_recolours_an_existing_label_that_drifted():
+    from unstrikeable.config import Department
+    status = {"organization": {"projectV2": {"title": "Mkt", "field": {"id": "F", "options": [
+        {"id": "o%d" % i, "name": c, "color": "GRAY", "description": ""}
+        for i, c in enumerate(["Ideas", "Ready to write", "Drafting", "In review", "Ready to publish", "Published"])]}}}}
+    writes = []
+
+    def fake_run(args, stdin=None):
+        if args[:2] == ["label", "list"]:
+            return ('[{"name": "writer:kevin", "color": "1D76DB", "description": ""},'
+                    ' {"name": "needs:human", "color": "D93F0B", "description": ""}]')
+        writes.append(args)
+        return ""
+
+    flow = load_flow("content")
+    d = Department("marketing", flow, {"owner": "acme", "number": 2}, ["acme/mkt"], {"kevin": ["writer"]})
+    board = GitHubBoard(d.board, flow, set(), graphql=lambda q, **v: status, run=fake_run)
+    plan = board.ensure_layout(d, apply=False)
+    assert "acme/mkt: ~ label writer:kevin color 1d76db -> 006b75" in plan
+    assert not any("needs:human" in p for p in plan)                     # case of the hex does not matter
+    assert writes == []
+    board.ensure_layout(d, apply=True)
+    assert ["label", "edit", "writer:kevin", "-R", "acme/mkt", "--color", "006b75"] in writes
+
+
 def test_prune_is_refused_while_items_sit_outside_the_flow():
     import pytest
     from unstrikeable.backends.github import GitHubError

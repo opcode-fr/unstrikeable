@@ -88,6 +88,7 @@ class Flow:
     extra_labels: list[str] = field(default_factory=list)
     artifact: dict[str, Any] = field(default_factory=dict)
     kinds: list[str] = field(default_factory=list)     # closed list: the agent classifies each task it closes
+    label_colors: dict[str, str] = field(default_factory=dict)  # label prefix ("dev" for dev:x) -> hex colour
 
     def column(self, key: str) -> str:
         for s in self.states:
@@ -161,6 +162,7 @@ def load_flow(name: str, overrides: dict | None = None, search: list[Path] | Non
     overrides = dict(overrides or {})
     columns = overrides.pop("columns", {}) or {}
     extra = overrides.pop("labels", []) or []
+    colors = {**(raw.get("label_colors") or {}), **(overrides.pop("label_colors", {}) or {})}
     raw = {**raw, **overrides}                         # shallow merge, by design
 
     states = [State(key=s["key"], column=s["column"]) for s in raw.get("states") or []]
@@ -191,7 +193,7 @@ def load_flow(name: str, overrides: dict | None = None, search: list[Path] | Non
 
     return Flow(name, states, roles, dict(raw.get("playbooks") or {}),
                 list(raw.get("extra_labels") or []) + list(extra), dict(raw.get("artifact") or {}),
-                _kinds(name, raw.get("kinds")))
+                _kinds(name, raw.get("kinds")), {str(k): str(v).lower().lstrip("#") for k, v in colors.items()})
 
 
 def _trusted_authors(dept: str, raw: Any, agents: dict, staff: dict) -> dict[str, str | None]:

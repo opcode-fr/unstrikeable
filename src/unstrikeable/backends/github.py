@@ -241,10 +241,14 @@ class GitHubBoard:
                          f=field["id"], o=opts)
         want = expected_labels(dept)
         for repo in dept.repos:
-            have = {l["name"] for l in json.loads(self.run(
+            have = {l["name"]: l["color"].lower() for l in json.loads(self.run(
                 ["label", "list", "-R", repo, "--limit", "500", "--json", "name,color,description"]))}
             for name, (color, desc) in want.items():
                 if name in have:
+                    if have[name] != color:
+                        plan.append("%s: ~ label %s color %s -> %s" % (repo, name, have[name], color))
+                        if apply:
+                            self.run(["label", "edit", name, "-R", repo, "--color", color])
                     continue
                 plan.append("%s: + label %s" % (repo, name))
                 if apply:
