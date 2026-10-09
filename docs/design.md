@@ -67,6 +67,9 @@ departments:
         - channel:x
         - channel:linkedin
         - type:release
+      label_colors:             # optional: one pastel per prefix of the labels above
+        channel: bfdadc
+        type: c5def5
 
   rnd:
     flow: dev
@@ -277,6 +280,9 @@ roles:
   reviewer:                     # a human: reviews the PR, publishes, then merges
     human: true
 
+label_colors:                   # label prefix -> colour: one per role, saturated and cold
+  writer: "006b75"
+
 playbooks:                      # instructions handed to the agent, per role.trigger
   planner.item_new: playbooks/content/brief.md
   planner.human_comment: playbooks/content/brief.md
@@ -314,6 +320,12 @@ kinds:                          # nature of the work, chosen by the agent when i
   ```
 - System labels (`needs:human`, `agent:pause`, `agent:lost`,
   `spec:question`) are fixed and shared by every flow.
+- `label_colors` maps a label **prefix** (the part before `:`) to a hex colour, so the board reads at a glance:
+  warm and saturated = a human must act (system labels, fixed in the runtime), cold and saturated = an agent holds
+  the item (one colour per role, set by the flow: `dev` blue, `review` purple, `writer` teal), pastel = description
+  only (`channel:`, `type:`…, set in the department's `overrides: label_colors:`, merged with the flow's). What
+  breaks without it: nothing, role labels default to blue and extra labels to `c5def5`. Limits: only labels the
+  runtime manages are coloured; `uns layout` recolours them when they drift, and never touches other labels.
 - `kinds` is a **closed list** of task kinds (lowercase slugs) used to classify work in `uns report`. What it is
   for: comparing time and cost per kind of work (a bug vs a feature, a post vs an article). What breaks without
   it: nothing, tasks are simply not classified (`--kind` is then neither asked nor accepted). Limits: the kind is
@@ -506,6 +518,8 @@ The only exception to "no agent pushes to a default branch": `memory/agents/<sel
   made once by writing the ticket instead of once more by setting a label.
 - Task kinds are declared by the agent at closing, from a closed list in the flow, rather than read from issue
   labels: every task gets one, with no human discipline needed. Costs are not written on the board.
+- Label colours are declared per prefix (`label_colors`), not derived from a hash of the name: a hash collides
+  (`type` and `model` got the same pastel) and cannot carry the meaning warm = human, cold = agent, pastel = info.
 
 ## 12. Open questions
 
