@@ -102,6 +102,15 @@ def _last_word(item: Item, me: str, humans_only: bool) -> Comment | None:
     return c
 
 
+def needs_vetting(item: Item) -> bool:
+    """Content from a non-member (issue body, comment, linked PR or its comments/reviews) that no member
+    answered yet: agents must not read it. A member's comment posted after it is the go."""
+    if not item.outsider_at:
+        return False
+    go = max((c.created for c in item.comments if c.trusted and c.agent is None and not c.status), default="")
+    return item.outsider_at > go
+
+
 def _spoke(item: Item, me: str) -> bool:
     return any(c.agent == me for c in item.comments)
 

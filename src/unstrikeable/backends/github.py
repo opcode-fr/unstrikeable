@@ -17,13 +17,16 @@ AGENT_RE = re.compile(r"<!-- (?:uns|gha):agent=(\S+) -->")      # gha = legacy g
 CI = {"SUCCESS": "SUCCESS", "FAILURE": "FAILURE", "ERROR": "FAILURE", "PENDING": "PENDING", "EXPECTED": "PENDING"}
 
 ISSUE_FIELDS = """
-  number title url state authorAssociation author { login }
+  number title url state createdAt authorAssociation author { login }
   repository { nameWithOwner }
   labels(first:30) { nodes { name } }
   issueDependenciesSummary { blockedBy }
-  comments(last:30) { nodes { databaseId author { login } authorAssociation body } }
+  comments(last:30) { nodes { databaseId createdAt author { login } authorAssociation body } }
   closedByPullRequestsReferences(first:5, includeClosedPrs:false) {
-    nodes { number url mergeable headRefOid statusCheckRollup { state } } }
+    nodes { number url mergeable headRefOid createdAt authorAssociation author { login }
+      statusCheckRollup { state }
+      comments(last:20) { nodes { createdAt authorAssociation author { login } } }
+      reviews(last:20) { nodes { createdAt authorAssociation author { login } } } } }
 """
 
 ITEMS_Q = """
@@ -87,7 +90,19 @@ def parse_comment(c: dict, bots: set[str], can_write: Callable[[str], bool] | No
     body = c.get("body") or ""
     m = AGENT_RE.search(body) if trusted else None
     return Comment(int(c["databaseId"]), login or "?", trusted, agent=m.group(1) if m else None,
-                   status=trusted and ("<!-- uns:status " in body or "<!-- gha:status " in body), body=body)
+                   status=trusted and ("<!-- uns:status " in body or "<!-- gha:status " in body), body=body,
+                   created=c.get("createdAt") or "")
+
+
+def outsider_at(n: dict, bots: set[str], can_write: Callable[[str], bool] | None = None) -> str:
+    """Newest content written by a non-member: issue body, comments, linked PRs, their comments and reviews."""
+    def outside(x: dict) -> bool:
+        return not _trusted(x.get("authorAssociation"), _login(x.get("author")), bots, can_write)
+
+    nodes = [n] + n["comments"]["nodes"]
+    for p in (n.get("closedByPullRequestsReferences") or {}).get("nodes") or []:
+        nodes += [p] + ((p.get("comments") or {}).get("nodes") or []) + ((p.get("reviews") or {}).get("nodes") or [])
+    return max((x.get("createdAt") or "" for x in nodes if outside(x)), default="")
 
 
 def parse_issue(n: dict, column: str | None, flow: Flow, bots: set[str],
@@ -102,7 +117,8 @@ def parse_issue(n: dict, column: str | None, flow: Flow, bots: set[str],
         author_trusted=_trusted(n.get("authorAssociation"), _login(n.get("author")), bots, can_write),
         author_agent=_login(n.get("author")) if _login(n.get("author")) in bots else None,
         blocked_by=(n.get("issueDependenciesSummary") or {}).get("blockedBy") or 0,
-        comments=[parse_comment(c, bots, can_write) for c in n["comments"]["nodes"]], prs=prs)
+        comments=[parse_comment(c, bots, can_write) for c in n["comments"]["nodes"]], prs=prs,
+        outsider_at=outsider_at(n, bots, can_write))
 
 
 def split_ref(ref: str) -> tuple[str, str, int]:

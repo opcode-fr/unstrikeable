@@ -1,0 +1,169 @@
+{
+ "number": 36,
+ "title": "Long inputs: on_long=\"cut|error\" (limits read from cross.json / decision.json)",
+ "url": "https://github.com/usejul/jul/issues/36",
+ "state": "CLOSED",
+ "createdAt": "2026-10-06T08:45:05Z",
+ "authorAssociation": "MEMBER",
+ "author": {
+  "login": "bdauzats"
+ },
+ "repository": {
+  "nameWithOwner": "usejul/jul"
+ },
+ "labels": {
+  "nodes": [
+   {
+    "name": "dev:jeanmi"
+   }
+  ]
+ },
+ "issueDependenciesSummary": {
+  "blockedBy": 0
+ },
+ "comments": {
+  "nodes": [
+   {
+    "databaseId": 6012762614,
+    "createdAt": "2026-10-06T08:50:29Z",
+    "author": {
+     "login": "bdauzats"
+    },
+    "authorAssociation": "MEMBER",
+    "body": "Chunk and aggregate: OUI\nTrain on longer inputs: Il faudra f"
+   },
+   {
+    "databaseId": 6012815637,
+    "createdAt": "2026-10-06T08:53:57Z",
+    "author": {
+     "login": "jlestel"
+    },
+    "authorAssociation": "MEMBER",
+    "body": "## Decision (Brice, 2026-10-06)\n\n- **Chunk and aggregate**: "
+   },
+   {
+    "databaseId": 6026806834,
+    "createdAt": "2026-10-06T22:44:00Z",
+    "author": {
+     "login": "jlestel"
+    },
+    "authorAssociation": "MEMBER",
+    "body": "Retraining option for e5 tracked in #46."
+   },
+   {
+    "databaseId": 6045737829,
+    "createdAt": "2026-10-07T19:57:52Z",
+    "author": {
+     "login": "didier-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "## Review #39 (didier), commit `c91da834`: back to In progre\n<!-- gha:agent=didier -->"
+   },
+   {
+    "databaseId": 6046352172,
+    "createdAt": "2026-10-07T20:35:18Z",
+    "author": {
+     "login": "bdauzats"
+    },
+    "authorAssociation": "MEMBER",
+    "body": "This feature seem useless, or only keep error and cut? what "
+   },
+   {
+    "databaseId": 6046878476,
+    "createdAt": "2026-10-07T21:07:53Z",
+    "author": {
+     "login": "jeanmi-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "@bdauzats I agree: keep **cut + error** and drop **chunk**. \n<!-- gha:agent=jeanmi -->"
+   },
+   {
+    "databaseId": 6047045820,
+    "createdAt": "2026-10-07T21:18:09Z",
+    "author": {
+     "login": "didier-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "## Review #39 (didier), commit `927f7271`: back to In progre\n<!-- gha:agent=didier -->"
+   },
+   {
+    "databaseId": 6047169053,
+    "createdAt": "2026-10-07T21:26:02Z",
+    "author": {
+     "login": "jeanmi-usejul"
+    },
+    "authorAssociation": "NONE",
+    "body": "Review handled in `d4881a3` (didier, `927f7271`):\n\n1. **`jul\n<!-- gha:agent=jeanmi -->"
+   }
+  ]
+ },
+ "closedByPullRequestsReferences": {
+  "nodes": [
+   {
+    "number": 39,
+    "url": "https://github.com/usejul/jul/pull/39",
+    "mergeable": "UNKNOWN",
+    "headRefOid": "d4881a3fd8b77b140316d580177395d3aaa789ec",
+    "createdAt": "2026-10-06T10:27:06Z",
+    "authorAssociation": "MEMBER",
+    "author": {
+     "login": "jlestel"
+    },
+    "statusCheckRollup": {
+     "state": "SUCCESS"
+    },
+    "comments": {
+     "nodes": [
+      {
+       "createdAt": "2026-10-06T12:12:48Z",
+       "authorAssociation": "MEMBER",
+       "author": {
+        "login": "bdauzats"
+       }
+      },
+      {
+       "createdAt": "2026-10-06T12:25:47Z",
+       "authorAssociation": "MEMBER",
+       "author": {
+        "login": "jlestel"
+       }
+      },
+      {
+       "createdAt": "2026-10-06T15:17:01Z",
+       "authorAssociation": "MEMBER",
+       "author": {
+        "login": "bdauzats"
+       }
+      },
+      {
+       "createdAt": "2026-10-06T20:16:18Z",
+       "authorAssociation": "MEMBER",
+       "author": {
+        "login": "jlestel"
+       }
+      },
+      {
+       "createdAt": "2026-10-06T22:59:34Z",
+       "authorAssociation": "MEMBER",
+       "author": {
+        "login": "bdauzats"
+       }
+      }
+     ]
+    },
+    "reviews": {
+     "nodes": [
+      {
+       "createdAt": "2026-10-07T21:31:29Z",
+       "authorAssociation": "NONE",
+       "author": {
+        "login": "didier-usejul"
+       }
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "body_note": "captured from usejul/jul#36 (public) on 2026-10-09, bodies cut to 60 chars"
+}
