@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import fcntl
 import json
 import os
 import subprocess
@@ -120,27 +121,56 @@ def department_of(co: Company, ref: str, name: str | None = None) -> Department:
 
 
 # ---------------------------------------------------------------- commands
-def cmd_poll(a: argparse.Namespace) -> None:
+def next_event(agent: str, dry_run: bool = False) -> str:
+    """The text to hand to the agent ('' = nothing). Consumes the event unless dry_run."""
     if (home() / "PAUSE").exists():
-        return
+        return ""
     local = load_local()
     if local.get("config"):
         pull(Path(os.path.expanduser(local["config"])))
     co = load(local)
-    me = co.agents.get(a.agent)
+    me = co.agents.get(agent)
     if me is None:
-        raise UsageError("agent %r is not declared in config.yml" % a.agent)
+        raise UsageError("agent %r is not declared in config.yml" % agent)
     if me.get("instance") and local.get("instance") and me["instance"] != local["instance"]:
         raise UsageError("agent %r is hosted on instance %r, not %r: refusing to poll" % (
-            a.agent, me["instance"], local["instance"]))
-    state = read_state(a.agent)
-    boards = {d.name: make_board(co, d, a.agent) for d in co.departments_of(a.agent)}
-    meter = make_meter(((local.get("agents") or {}).get(a.agent) or {}).get("meter"))
-    out = poll(a.agent, co, boards, state, dry_run=a.dry_run, meter=meter)
+            agent, me["instance"], local["instance"]))
+    state = read_state(agent)
+    boards = {d.name: make_board(co, d, agent) for d in co.departments_of(agent)}
+    meter = make_meter(((local.get("agents") or {}).get(agent) or {}).get("meter"))
+    out = poll(agent, co, boards, state, dry_run=dry_run, meter=meter)
+    if not dry_run:
+        write_state(agent, state)
+    return "Load the `unstrikeable-agent` skill and handle this event.\n\n" + out if out else ""
+
+
+def cmd_poll(a: argparse.Namespace) -> None:
+    out = next_event(a.agent, a.dry_run)
     if out:
-        print("Load the `unstrikeable-agent` skill and handle this event.\n\n" + out)
-    if not a.dry_run:
-        write_state(a.agent, state)
+        print(out)
+
+
+def cmd_run(a: argparse.Namespace) -> int:
+    """Adapter for CLI agents (Kiro, Claude Code…): poll, then hand the event to `command` on stdin.
+    A lock per agent skips the poll while the previous turn still runs (the event stays on the board)."""
+    command = a.command[1:] if a.command[:1] == ["--"] else a.command
+    if not command:
+        raise UsageError("run: give the agent command after --, e.g. uns run --agent a -- kiro-cli chat …")
+    lock = state_path(a.agent).with_name("run-%s.lock" % a.agent)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "w") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return 0                                   # previous turn still running
+        out = next_event(a.agent)
+        if not out:
+            return 0
+        rc = subprocess.run(command, input=out, text=True).returncode
+    if rc:
+        print("uns: %s exited with %d (the event was delivered; the agent gets nudged if it did not report)" % (
+            command[0], rc), file=sys.stderr)
+    return rc
 
 
 def state_path(agent: str) -> Path:
@@ -377,6 +407,10 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--agent", required=True)
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_poll)
+    p = sp.add_parser("run", help="poll, then hand the event on stdin to a CLI agent: uns run --agent a -- <cmd>")
+    p.add_argument("--agent", required=True)
+    p.add_argument("command", nargs=argparse.REMAINDER)
+    p.set_defaults(fn=cmd_run)
 
     def item_cmd(name: str, fn, help: str) -> argparse.ArgumentParser:
         p = sp.add_parser(name, help=help)
@@ -461,11 +495,10 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     a = parser().parse_args(argv)
     try:
-        a.fn(a)
+        return a.fn(a) or 0
     except (UsageError, ConfigError, GitHubError) as e:
         print("uns: %s" % e, file=sys.stderr)
         return 2
-    return 0
 
 
 if __name__ == "__main__":

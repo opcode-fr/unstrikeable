@@ -1,5 +1,7 @@
 """The `uns` CLI, with boards injected (no network)."""
+import fcntl
 import json
+import sys
 import textwrap
 
 import pytest
@@ -267,3 +269,58 @@ def test_set_field(env):
     _, board = env
     assert cli.main(["set", "acme/mkt#1", "Size", "M", "--agent", "kevin"]) == 0
     assert board.calls[-1] == ("set", "acme/mkt#1", "Size", "M")
+
+
+# ---------------------------------------------------------------- uns run (CLI agents: Kiro, Claude Code…)
+def _recorder(tmp_path, code=0):
+    """A command that stores what it reads on stdin, then exits with `code`."""
+    out = tmp_path / "received.txt"
+    script = "import sys; open(%r, 'w').write(sys.stdin.read()); sys.exit(%d)" % (str(out), code)
+    return out, ["--", sys.executable, "-c", script]
+
+
+def test_run_hands_the_event_to_the_command_on_stdin(env, tmp_path):
+    home, _ = env
+    out, cmd = _recorder(tmp_path)
+    assert cli.main(["run", "--agent", "kevin"] + cmd) == 0
+    got = out.read_text()
+    assert got.startswith("Load the `unstrikeable-agent` skill") and "writer.assigned" in got
+    assert json.loads((home / "state" / "poll-kevin.json").read_text())["current"]["ref"] == "acme/mkt#1"
+
+
+def test_run_does_not_start_the_command_when_there_is_nothing(env, tmp_path):
+    home, board = env
+    board._items.clear()
+    out, cmd = _recorder(tmp_path)
+    assert cli.main(["run", "--agent", "kevin"] + cmd) == 0
+    assert not out.exists()
+
+
+def test_run_skips_the_poll_while_the_previous_turn_runs(env, tmp_path):
+    home, _ = env
+    out, cmd = _recorder(tmp_path)
+    (home / "state").mkdir()
+    with open(home / "state" / "run-kevin.lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert cli.main(["run", "--agent", "kevin"] + cmd) == 0
+    assert not out.exists()
+    assert not (home / "state" / "poll-kevin.json").exists()      # the event was not consumed
+
+
+def test_run_reports_a_failing_command(env, tmp_path, capsys):
+    out, cmd = _recorder(tmp_path, code=3)
+    assert cli.main(["run", "--agent", "kevin"] + cmd) == 3
+    assert "exited with 3" in capsys.readouterr().err
+
+
+def test_run_needs_a_command(env, capsys):
+    assert cli.main(["run", "--agent", "kevin"]) == 2
+    assert "command" in capsys.readouterr().err
+
+
+def test_run_honours_the_pause_file(env, tmp_path):
+    home, _ = env
+    (home / "PAUSE").touch()
+    out, cmd = _recorder(tmp_path)
+    assert cli.main(["run", "--agent", "kevin"] + cmd) == 0
+    assert not out.exists()
