@@ -34,6 +34,7 @@ uns poll --agent kevin --dry-run   # what Kevin would receive right now
 | Command | For | What |
 |---|---|---|
 | `uns poll --agent A [--dry-run]` | cron | next event for A, or nothing |
+| `uns run --agent A -- CMD…` | cron | poll, then hand the event to a CLI agent on stdin (one turn at a time) |
 | `uns move REF STATE --agent A` | agents | move an item to a logical state |
 | `uns status REF --agent A --state working\|done\|blocked` | agents | heartbeat comment |
 | `uns comment REF --agent A --body-file F` | agents | signed comment |

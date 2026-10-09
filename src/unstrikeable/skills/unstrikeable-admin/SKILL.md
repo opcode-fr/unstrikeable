@@ -53,6 +53,14 @@ copy `uns_poll.sh` into the profile's `scripts/` with `__AGENT__` replaced, then
 Explain it and get a human go before `cron resume`: from then on the agent writes on the board.
 Install the `unstrikeable-agent` skill in the agent's profile.
 
+## Kiro (and other CLI agents)
+
+One cron per agent calling `uns run --agent <a> -- kiro-cli chat --no-interactive --agent <a> --trust-all-tools`:
+the event goes on stdin, a per-agent lock skips the poll while the previous turn runs. Files and steps in
+`integrations/kiro/` (agent file in `~/.kiro/agents/`, `KIRO_API_KEY` in a chmod 600 file, `skills_dirs:
+[~/.kiro/skills]`). No cost meter: set `limits.max_events_per_day`. Explain it and get a human go before adding
+the crontab line.
+
 ## Follow-up
 
 - Slack: two `--no-agent` crons in the admin profile, `uns digest --alerts` every 15 min (silent when nothing) and

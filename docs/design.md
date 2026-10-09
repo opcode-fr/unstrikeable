@@ -309,7 +309,10 @@ class Forge(Protocol):            # GitHub, GitLab…; optional (a content flow 
 
 The runtime **emits events** (text + JSON) and does not care who handles them. An adapter delivers them:
 - `hermes` (v0): `--no-agent` cron → the profile's `bot-chat` (turns are serialised per profile = natural per-agent lock).
-- Others (Claude Code, plain scripts…) later, same contract.
+- CLI agents (`kiro`, later Claude Code…): cron → `uns run --agent a -- <agent command>`. `uns run` polls, hands the
+  event to the command on stdin and holds a per-agent lock (`state/run-<a>.lock`): while a turn runs, the next
+  tick does not poll, so the event stays on the board. Kiro setup: `integrations/kiro/`. No cost meter for Kiro
+  (credits are not readable by `uns`): such an agent relies on `max_events_per_day` and its plan's credit cap.
 
 Foundation skills shipped: `unstrikeable-agent` (handling an event, the CLI, status) and
 `unstrikeable-admin` (setup, align, adding an agent, updates). Flow playbooks plug into them.
@@ -363,6 +366,8 @@ The only exception to "no agent pushes to a default branch": `memory/agents/<sel
 - Language: English (docs, messages, CLI).
 - GitHub backends use the `gh` CLI.
 - CLI name: `uns`.
+- CLI agents run through one generic command (`uns run … -- <cmd>`, event on stdin) rather than one adapter per
+  tool: the lock and the poll are coded and tested once; a tool only needs a wrapper script and an agent file.
 
 ## 12. Open questions
 
