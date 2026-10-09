@@ -302,3 +302,16 @@ def test_dry_run_records_nothing(tmp_path):
     board.upsert_status("acme/mkt#1", "kevin", status_body("kevin", "done", T0, T0 + 60))
     run(co, board, state, now=T0 + 120, dry=True)
     assert not state.get("finished")
+
+
+# ---------------------------------------------------------------- trusted authors
+def test_auto_assignment_puts_the_named_label_on_take(tmp_path):
+    flow = load_flow("content")
+    d = Department("marketing", flow, {}, ["acme/mkt"], {"kevin": ["writer"]}, trusted_authors=["brice"])
+    co = Company(Path(tmp_path), {"marketing": d}, {"kevin": {}}, dict(DEFAULT_LIMITS))
+    board = FakeBoard([Item("acme/mkt", 1, "post", "ready", [], author="brice")])
+    out = poll("kevin", co, {"marketing": board}, {}, T0, dry_run=True)
+    assert "writer.assigned" in out and board.calls == []              # dry run: board untouched
+    out = poll("kevin", co, {"marketing": board}, {}, T0)
+    assert "writer.assigned" in out and "trusted author @brice" in out
+    assert "writer:kevin" in board.item("acme/mkt#1").labels

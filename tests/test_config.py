@@ -217,3 +217,19 @@ def test_kinds_can_be_replaced_by_the_department():
 def test_invalid_kinds_are_rejected(kinds):
     with pytest.raises(ConfigError, match="kinds"):
         load_flow("dev", {"kinds": kinds})
+
+
+# ---------------------------------------------------------------- trusted authors
+TRUSTING = MINIMAL.replace("        staff:\n", "        trusted_authors:\n          - brice\n        staff:\n")
+
+
+def test_trusted_authors_are_read_per_department(tmp_path):
+    write(tmp_path, "config.yml", TRUSTING)
+    assert load_company(tmp_path).departments["marketing"].trusted_authors == ["brice"]
+
+
+@pytest.mark.parametrize("who", ["kevin", "kevin-acme", "Kevin-Acme[bot]", "dependabot[bot]"])
+def test_trusted_authors_are_humans_only(tmp_path, who):
+    write(tmp_path, "config.yml", TRUSTING.replace("- brice", "- %s" % who))
+    with pytest.raises(ConfigError, match="humans only"):
+        load_company(tmp_path)

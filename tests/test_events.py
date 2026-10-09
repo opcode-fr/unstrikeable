@@ -202,3 +202,47 @@ def test_a_human_comment_vets_an_agent_created_item():
 
 def test_an_assignment_label_vets_an_agent_created_item():
     assert kinds("gerard", [by_agent(labels=["dev:jeanmichel"])]) == [("pm", "item_new")]
+
+
+# ---------------------------------------------------------------- trusted authors (assignment without a label)
+def trusting(authors=("brice",)):
+    d = dept()
+    return Department(d.name, d.flow, d.board, d.repos, d.staff, trusted_authors=list(authors))
+
+
+def by(author, state="ready", labels=(), n=1, agent=None):
+    return Item("acme/app", n, "t", state, list(labels), author=author, author_agent=agent)
+
+
+def test_item_written_by_a_trusted_author_goes_to_the_first_idle_dev():
+    d = trusting()
+    evs = events_for("gerard", d, [by("brice")])
+    assert [(e.role, e.trigger) for e in evs] == [("dev", "assigned")]
+    assert evs[0].auto_label == "dev:gerard"
+    assert kinds("jeanmichel", [by("brice")], d) == []
+
+
+def test_trusted_author_match_ignores_case_and_skips_busy_devs():
+    d = trusting(["Brice"])
+    items = [by("brice", n=2), by("x", "doing", ["dev:gerard"], n=1)]
+    assert kinds("gerard", items, d) == []
+    assert kinds("jeanmichel", items, d) == [("dev", "assigned")]
+
+
+def test_without_a_trusted_author_nothing_is_assigned():
+    assert kinds("gerard", [by("brice")]) == []                         # default: empty list
+    assert kinds("gerard", [by("random")], trusting()) == []
+
+
+def test_a_label_set_by_a_human_still_wins():
+    evs = events_for("jeanmichel", trusting(), [by("brice", labels=["dev:jeanmichel"])])
+    assert [(e.role, e.trigger) for e in evs] == [("dev", "assigned")] and evs[0].auto_label is None
+    assert kinds("gerard", [by("brice", labels=["dev:jeanmichel"])], trusting()) == []
+
+
+def test_auto_assignment_only_where_the_role_is_assigned():
+    assert kinds("gerard", [by("brice", "doing")], trusting()) == []    # dev reacts in doing only when named
+
+
+def test_an_item_written_by_an_agent_is_never_auto_assigned():
+    assert kinds("gerard", [by("capucine-acme", agent="capucine-acme")], trusting(["capucine-acme"])) == []

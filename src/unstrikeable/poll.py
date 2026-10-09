@@ -207,6 +207,11 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
                 work["reviews"][ref] = work["reviews"].get(ref, 0) + 1
             trigger = "%s.%s" % (ev.role, ev.trigger)
             note = ""
+            if ev.auto_label:
+                if not dry_run:
+                    board.labels(ref, add=[ev.auto_label])               # the board shows who took it
+                note = "Assigned to you automatically: item written by trusted author @%s (`%s` set)." % (
+                    ev.item.author, ev.auto_label)
             if work["runs"][ref] > limits["max_runs"] or work["reviews"].get(ref, 0) > limits["max_review_rounds"]:
                 trigger = "%s.budget" % ev.role
                 note = ("BUDGET EXCEEDED (runs=%d/%d, reviews=%d/%d): set `needs:human`, comment the current state, "

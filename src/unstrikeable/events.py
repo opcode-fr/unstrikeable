@@ -18,6 +18,7 @@ class Event:
     trigger: str
     item: Item
     comment: Comment | None = None
+    auto_label: str | None = None   # named label the runtime sets on take (item from a trusted author)
 
     @property
     def priority(self) -> int:
@@ -67,9 +68,20 @@ def owner(role: Role, dept: Department, item: Item, items: list[Item]) -> str | 
     eligible = [a for a in dept.staff_with(role.name) if a not in others]
     if any(p in item.labels for p in role.pool_labels()):
         return next((a for a in eligible if not busy(a, dept, items)), None)
+    if trusted_take(role, dept, item):
+        return next((a for a in eligible if not busy(a, dept, items)), None)
     if not role.labelled or role.auto:
         return eligible[0] if eligible else None
     return None
+
+
+def trusted_take(role: Role, dept: Department, item: Item) -> bool:
+    """Unlabelled item written by a human of `trusted_authors`, in a state where the role is assigned work:
+    the first idle staff member takes it as if a human had set the label (the runtime sets it on take)."""
+    return (bool(dept.trusted_authors) and role.labelled and not role.auto and not item.author_agent
+            and item.author_trusted and item.author.lower() in {t.lower() for t in dept.trusted_authors}
+            and "assigned" in role.on.get(item.state or "", []) and not _named(role, item)
+            and not any(p in item.labels for p in role.pool_labels()))
 
 
 def _conversation(item: Item) -> list[Comment]:
@@ -117,9 +129,12 @@ def events_for(agent: str, dept: Department, items: list[Item]) -> list[Event]:
                 if it.author_agent and not any(c.trusted and c.agent is None and not c.status for c in it.comments):
                     continue                              # created by an agent: waits for a human signal
 
-            def ev(trigger, disc, comment=None, it=it, rname=rname):
+            auto = role.named_label(agent) if trusted_take(role, dept, it) else None
+
+            def ev(trigger, disc, comment=None, it=it, rname=rname, auto=auto):
                 key = "%s|%s|%s|%s|%s" % (dept.name, it.ref, rname, trigger, disc)
-                out.append(Event(key, agent, dept.name, rname, trigger, it, comment))
+                out.append(Event(key, agent, dept.name, rname, trigger, it, comment,
+                                 auto if trigger == "assigned" else None))
 
             waiting = SPEC_QUESTION in labels
             new_fired = False

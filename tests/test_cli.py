@@ -414,3 +414,17 @@ def test_task_log_goes_to_tasks_dir_readable_by_the_reader(env, tmp_path, capsys
     capsys.readouterr()
     assert cli.main(["report"]) == 0
     assert "kevin · post · 1 task" in capsys.readouterr().out
+
+
+def test_init_needs_no_instance_and_then_checks_clean(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("UNS_HOME", str(tmp_path / "nohome"))
+    assert cli.main(["init", str(tmp_path / "hq"), "--org", "acme"]) == 0
+    assert "README.md" in capsys.readouterr().out
+    assert cli.main(["init", str(tmp_path / "hq"), "--org", "acme"]) == 2
+    assert "not empty" in capsys.readouterr().err
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "local.yml").write_text("instance: x\nconfig: %s\n" % (tmp_path / "hq"))
+    monkeypatch.setenv("UNS_HOME", str(home))
+    assert cli.main(["check"]) == 0
+    assert "rnd: flow dev, 0 staff" in capsys.readouterr().out

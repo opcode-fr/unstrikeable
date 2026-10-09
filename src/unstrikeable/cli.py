@@ -24,6 +24,7 @@ from .memory import commit_and_push, pull, write_entry
 from .meter import hermes_state_db, make_usage, parse_usage, read_bot_chat_usage
 from .model import AGENT_MARK
 from .poll import MEMORY_REF, baseline, poll
+from .init import init
 from .presets import hire, list_presets
 from .report import report
 from .status import STATES, parse_status, status_body
@@ -327,6 +328,14 @@ def cmd_hire(a: argparse.Namespace) -> None:
     print("wrote %s (add its real capabilities)\nadd to config.yml:\n%s" % (path, snippet))
 
 
+def cmd_init(a: argparse.Namespace) -> None:
+    try:
+        written = init(Path(os.path.expanduser(a.dir)), org=a.org, flow=a.flow)
+    except (FileExistsError, ValueError) as e:
+        raise UsageError(str(e)) from e
+    print("wrote %d files in %s; next steps in its README.md" % (len(written), a.dir))
+
+
 def cmd_digest(a: argparse.Namespace) -> None:
     local = load_local()
     states = {}
@@ -513,6 +522,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--department")
     p.add_argument("--list", action="store_true")
     p.set_defaults(fn=cmd_hire)
+    p = sp.add_parser("init", help="write a starter config repo for a new company (local files only)")
+    p.add_argument("dir")
+    p.add_argument("--org", required=True, help="GitHub org owning the board and repos")
+    p.add_argument("--flow", default="dev", choices=["dev", "content"])
+    p.set_defaults(fn=cmd_init)
     p = sp.add_parser("digest", help="human summary for Slack (--alerts: only new alerts, silent otherwise)")
     p.add_argument("--alerts", action="store_true")
     p.add_argument("--dry-run", action="store_true")

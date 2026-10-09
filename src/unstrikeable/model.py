@@ -35,6 +35,7 @@ class Item:
     state: str | None              # logical state key (None = not on a known column)
     labels: list[str] = field(default_factory=list)
     url: str = ""
+    author: str = ""                  # login, lowercase, without "[bot]"
     author_trusted: bool = True
     author_agent: str | None = None   # set when one of our agents created the item
     blocked_by: int = 0

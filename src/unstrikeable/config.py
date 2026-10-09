@@ -112,6 +112,7 @@ class Department:
     board: dict[str, Any]
     repos: list[str]
     staff: dict[str, list[str]]
+    trusted_authors: list[str] = field(default_factory=list)   # humans whose items need no assignment label
 
     def staff_with(self, role: str) -> list[str]:
         return [a for a, roles in self.staff.items() if role in roles]
@@ -192,6 +193,22 @@ def load_flow(name: str, overrides: dict | None = None, search: list[Path] | Non
                 _kinds(name, raw.get("kinds")))
 
 
+def _trusted_authors(dept: str, raw: Any, agents: dict) -> list[str]:
+    """Logins of humans whose items are assigned without a label. Humans only: an agent on this list would let
+    an agent that read a booby-trapped issue hand work to another agent with no human in between."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not all(isinstance(a, str) and a.strip() for a in raw):
+        raise ConfigError("%s: trusted_authors must be a list of GitHub logins" % dept)
+    machines = {str(n).lower() for n in agents} | {
+        str(a.get("identity", "")).lower() for a in agents.values() if isinstance(a, dict) and a.get("identity")}
+    for login in raw:
+        bare = login.lower().replace("[bot]", "")
+        if login.lower().endswith("[bot]") or bare in machines:
+            raise ConfigError("%s: trusted_authors are humans only, %r is an agent or a bot" % (dept, login))
+    return [a.lower() for a in raw]
+
+
 KIND_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
@@ -224,6 +241,7 @@ def load_company(root: Path | str) -> Company:
             for r in roles:
                 if r not in flow.roles:
                     raise ConfigError("%s: %s has role %r, not in flow %s" % (name, a, r, flow.name))
-        depts[name] = Department(name, flow, dict(d.get("board") or {}), list(d.get("repos") or []), staff)
+        depts[name] = Department(name, flow, dict(d.get("board") or {}), list(d.get("repos") or []), staff,
+                                 _trusted_authors(name, d.get("trusted_authors"), agents))
     return Company(root, depts, agents, {**DEFAULT_LIMITS, **(raw.get("limits") or {})}, raw.get("forge"),
                    str(raw.get("runtime") or ""), {**DEFAULT_MEMORY, **(raw.get("memory") or {})})
