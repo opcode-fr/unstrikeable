@@ -495,6 +495,17 @@ Folders are split by **lifecycle**, not by owner, so the curator scans one place
 6. **Content**: reusable facts and procedures, no session logs. Size caps (`memory.shared_max_words`, default
    3000; `memory.private_max_words`, default 1500): above them the event carries a warning asking the owner (or the
    curator for `shared/`) to condense instead of piling up.
+7. **Shared memory as a wiki** (after Karpathy's "LLM Wiki"): `memory/shared/` holds one page per topic and an
+   `index.md` (one line per page with its summary). Once `index.md` exists, events inject only the index and the
+   agent opens the pages it needs, so team knowledge grows without growing every prompt; `shared_max_words` then
+   caps the index. Without `index.md`, every file is injected as before. The curator keeps the index in sync and
+   lints (duplicates, stale lines, orphan pages) on every curation.
+8. **Ingesting existing knowledge**: `uns ingest --agent A --source <path|url>` queues an inbox entry
+   (`kind: ingest`) pointing at docs, a notes vault or resolved tickets. Only the pointer enters the config repo:
+   the curator reads the source from its own instance and writes derived, anonymised pages, through the same
+   reviewed publication as any curation. What it is for: seed a new company's agents with what the humans
+   already know. Limits: the source must be readable from the curator's instance; raw sources (which may hold
+   personal data) never land under `memory/`; a large source is folded in over several curations, within the cap.
 
 The only exception to "no agent pushes to a default branch": `memory/agents/<self>/` and `memory/inbox/<self>/` in the
 config repo, and `memory/shared/` through `uns memory-publish` after a `SAFE` review.

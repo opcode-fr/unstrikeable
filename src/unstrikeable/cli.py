@@ -20,7 +20,7 @@ from .backends.base import Board
 from .backends.github import GitHubBoard, GitHubError
 from .config import DEFAULT_MEMORY, Company, ConfigError, Department, load_company
 from .digest import digest
-from .memory import commit_and_push, publish, pull, write_entry
+from .memory import commit_and_push, ingest_entry, publish, pull, write_entry
 from .meter import hermes_state_db, make_usage, parse_usage, read_bot_chat_usage
 from .model import AGENT_MARK
 from .poll import MEMORY_REF, baseline, poll
@@ -433,6 +433,20 @@ def reviewer(argv: object):
     return review
 
 
+def cmd_ingest(a: argparse.Namespace) -> None:
+    co = load(load_local())
+    try:
+        path = ingest_entry(co.root, a.agent, a.source, a.title)
+    except ValueError as e:
+        raise UsageError(str(e)) from e
+    if (co.root / ".git").exists():
+        owner = next((d.board.get("owner") for d in co.departments_of(a.agent)), "")
+        token = agent_token(a.agent, owner) if owner else None
+        env = {**os.environ, "GH_TOKEN": token} if token else None
+        commit_and_push(co.root, [path], "memory(%s): ingest %s" % (a.agent, a.source), env=env)
+    print("queued for the curator: %s" % path.relative_to(co.root))
+
+
 def cmd_memory_publish(a: argparse.Namespace) -> None:
     local = load_local()
     co = load(local)
@@ -602,6 +616,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--body-file")
     p.add_argument("--share", action="store_true")
     p.set_defaults(fn=cmd_remember)
+    p = sp.add_parser("ingest", help="queue existing knowledge (a path or URL) for the curator to fold into the wiki")
+    p.add_argument("--agent", required=True, help="who queues it (usually the curator)")
+    p.add_argument("--source", required=True, help="path or URL readable from the curator's instance")
+    p.add_argument("--title")
+    p.set_defaults(fn=cmd_ingest)
     p = sp.add_parser("memory-publish", help="curator: publish curated memory (reviewed: default branch, else a PR)")
     p.add_argument("--agent", required=True)
     p.add_argument("--summary")

@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from unstrikeable.memory import commit_and_push, curation_due, read_memory, slugify, write_entry
+from unstrikeable.memory import commit_and_push, curation_due, ingest_entry, inbox, read_memory, slugify, write_entry
 
 T0 = 1_791_000_000          # 2026-10-03
 
@@ -106,3 +106,44 @@ def test_commit_refuses_paths_outside_memory(clones):
     a, _ = clones
     with pytest.raises(ValueError, match="outside memory/"):
         commit_and_push(a, [a / "config.yml"], "nope")
+
+
+def test_wiki_mode_injects_only_the_index(tmp_path):
+    shared = tmp_path / "memory" / "shared"
+    shared.mkdir(parents=True)
+    (shared / "index.md").write_text("- [review](review.md): how we review PRs\n")
+    (shared / "review.md").write_text("Check CI before reviewing.")
+    text, _, _ = read_memory(tmp_path, "kevin", {"shared_max_words": 100, "private_max_words": 100})
+    assert "how we review PRs" in text and "memory/shared" in text
+    assert "Check CI before reviewing" not in text
+
+
+def test_without_an_index_every_shared_page_is_injected(tmp_path):
+    shared = tmp_path / "memory" / "shared"
+    shared.mkdir(parents=True)
+    (shared / "review.md").write_text("Check CI before reviewing.")
+    text, _, _ = read_memory(tmp_path, "kevin", {"shared_max_words": 100, "private_max_words": 100})
+    assert "Check CI before reviewing" in text
+
+
+def test_wiki_cap_applies_to_the_index(tmp_path):
+    shared = tmp_path / "memory" / "shared"
+    shared.mkdir(parents=True)
+    (shared / "index.md").write_text("- [a](a.md): short\n")
+    (shared / "a.md").write_text("word " * 500)
+    _, _, warnings = read_memory(tmp_path, "kevin", {"shared_max_words": 100, "private_max_words": 100})
+    assert warnings == []
+
+
+def test_ingest_queues_a_pointer_for_the_curator(tmp_path):
+    p = ingest_entry(tmp_path, "elon", "/vault/Support", now=T0)
+    assert p.parent == tmp_path / "memory" / "inbox" / "elon"
+    body = p.read_text()
+    assert "kind: ingest" in body and "source: /vault/Support" in body
+    assert inbox(tmp_path) == [str(p.relative_to(tmp_path))]
+
+
+def test_ingest_refuses_an_empty_or_multiline_source(tmp_path):
+    for bad in ("", "a\nb"):
+        with pytest.raises(ValueError):
+            ingest_entry(tmp_path, "elon", bad, now=T0)
