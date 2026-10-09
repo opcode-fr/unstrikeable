@@ -46,6 +46,7 @@ Instance settings (`local.yml`), several companies on one machine, isolated agen
 | `uns comment REF --agent A --body-file F` | agents | signed comment |
 | `uns label REF --agent A --add/--remove L` | agents | state labels (never assignments) |
 | `uns remember --agent A --title T --body-file F [--share]` | agents | private note, or proposal to the team |
+| `uns memory-publish --agent A --summary-file F` | curator | publish curated memory: reviewed `SAFE` → default branch, else a PR |
 | `uns pause` / `uns resume` `[--agent A]` | humans | kill switch: one agent or the whole instance |
 | `uns init DIR --org O [--flow dev\|content]` | admins | starter config repo for a new company (local files only) |
 | `uns layout [--department D] [--apply]` | admins | create missing columns and labels, fix label colours |

@@ -156,6 +156,8 @@ agents:                           # only the agents hosted here
       type: hermes
       profile: kevin
       state_db: ~/.hermes/profiles/kevin/state.db   # optional, default $HERMES_HOME/profiles/<profile>/state.db
+memory_review:                    # optional, curator's instance: tool-less model that reviews curated memory
+  - ~/.unstrikeable/review.sh     # reads the prompt on stdin, answers SAFE or FLAG: <reason> on stdout
 ```
 
 - `instance`: guards against two machines serving one agent (see below). Without it, no check is made.
@@ -169,6 +171,11 @@ agents:                           # only the agents hosted here
   uses the instance's own `gh` login, so the agent writes as that human.
 - `meter`: without it, tasks get a time but no cost, and cost quotas are not checked. An agent isolated in
   another OS account gets its counters piped by the Hermes owner's account instead (§6).
+- `memory_review`: a command (list of strings) that reads the review prompt on stdin and prints the verdict; it
+  must run a model **with no tools** (e.g. `hermes -p <curator> --ignore-rules -t todo -z "$(cat)"` in a script).
+  What it is for: curated memory reviewed `SAFE` goes straight to the default branch (§8). Without it, or when it
+  fails or answers anything else, every curation is held in a PR for a human, as before. Limits: a model can be
+  fooled, it complements the vetting gate (§6), it does not replace it.
 
 ### Several companies on one machine
 
@@ -425,6 +432,12 @@ class Board(Protocol):            # GitHub Projects today; Trello, Linear, Jira�
   - **One place for reports**: `tasks_dir` in `local.yml` points every instance of the machine to one shared
     directory (created by the admin, sticky like `/tmp`: `mkdir -m 1777`); each `tasks-<a>.jsonl` is owned by its
     agent's account and readable by the others (644), so a single `uns report` covers isolated agents too.
+- **Vetting gate**: at every poll, busy or not, items carrying content from a non-member (issue body, comment,
+  linked PR or its comments and reviews) that no member answered get `needs:vetting` (blocking) and one comment;
+  the label is lifted once a member comments after that content (any comment is the go). Why: agents read items
+  with `gh`, so an outsider's comment on a vetted issue of a public repo would reach them unfiltered. Limits: a
+  task already running may read it before the next poll; removing the label by hand does not count as the go
+  (the next poll sets it again).
 - **Security**: content from non-members is ignored; an item created by an agent waits for a human signal
   (a human comment or an assignment label) before a planner/PM spends anything on it; assignment = human
   validation of the item (a label set by a human, or an item written by a human of `trusted_authors`); external
@@ -456,7 +469,7 @@ Folders are split by **lifecycle**, not by owner, so the curator scans one place
 |---|---|---|---|---|
 | `memory/agents/<agent>/` | the agent's own long-term notes | that agent | that agent | no |
 | `memory/inbox/<agent>/` | proposals to share | that agent | that agent, curator | yes, then removed |
-| `memory/shared/` | team knowledge | curator (via PR) | every agent | — |
+| `memory/shared/` | team knowledge | curator (`uns memory-publish`) | every agent | — |
 
 1. **Append-only writes** in `agents/<self>/` and `inbox/<self>/`: one file per entry
    (`<yyyy-mm-dd>-<slug>.md`), committed straight to the config repo's default branch
@@ -466,18 +479,24 @@ Folders are split by **lifecycle**, not by owner, so the curator scans one place
    (stored in the agent's private memory, or in the inbox with `--share-learned`) or `--learned none`.
    Without it, agents skip memory on short tasks and the same pitfalls come back.
 3. **`curator` role** (`memory.curator`, an existing agent): triggered when the inbox holds `inbox_max` new
-   entries (default 10) or its oldest entry is older than `max_age_h` (default 24 h); it consolidates into
-   `memory/shared/*.md` through **a PR** and removes the processed entries. The curation task has no board item:
-   its status lives in the instance state (`uns status memory --agent <curator> …`).
-4. **Mandatory human review** of that PR: memory read by every agent is an injection vector
-   (an agent that read a booby-trapped issue could contaminate the whole team). No auto-merge.
+   entries (default 10) or its oldest entry is older than `max_age_h` (default 24 h; `1` = hourly when something
+   is new, free when the inbox is empty); it consolidates into `memory/shared/*.md`, deletes the processed entries
+   and runs `uns memory-publish`. The curation task has no board item: its status lives in the instance state
+   (`uns status memory --agent <curator> …`).
+4. **Reviewed publication**: memory read by every agent is an injection vector (an agent that read a booby-trapped
+   issue could contaminate the whole team). Two layers: the vetting gate (§6) keeps outside content away from
+   agents until a member gives the go; then `uns memory-publish` hands the diff of `memory/shared/` to a tool-less
+   model (`memory_review`, fenced as data with a random marker). Only an exact `SAFE` publishes on the default
+   branch; anything else (a flag, no reviewer, a crash, a secret pattern) pushes a branch and opens a PR for a
+   human, and the default branch stays untouched. Dropping entries without changing `shared/` needs no review.
 5. **"Private" means not loaded by other agents, not secret**: anyone with read access to the config repo can read it.
    Hence no secrets, no credentials, no personal data anywhere under `memory/`.
 6. **Content**: reusable facts and procedures, no session logs. Size caps (`memory.shared_max_words`, default
    3000; `memory.private_max_words`, default 1500): above them the event carries a warning asking the owner (or the
    curator for `shared/`) to condense instead of piling up.
 
-The only exception to "no agent pushes to a default branch": `memory/agents/<self>/` and `memory/inbox/<self>/` in the config repo.
+The only exception to "no agent pushes to a default branch": `memory/agents/<self>/` and `memory/inbox/<self>/` in the
+config repo, and `memory/shared/` through `uns memory-publish` after a `SAFE` review.
 
 ## 9. Distribution and updates
 
@@ -520,6 +539,13 @@ The only exception to "no agent pushes to a default branch": `memory/agents/<sel
   labels: every task gets one, with no human discipline needed. Costs are not written on the board.
 - Label colours are declared per prefix (`label_colors`), not derived from a hash of the name: a hash collides
   (`type` and `model` got the same pastel) and cannot carry the meaning warm = human, cold = agent, pastel = info.
+- Outside content is gated at the entrance (`needs:vetting` until a member comments) rather than filtered from
+  memory by source: a note's `Source:` line is written by the agent, so a booby-trapped agent could forge it.
+  The member's go is a comment, not a label removal: a comment carries an author and a date the runtime can
+  compare with the outside content, statelessly, across instances.
+- Curated memory is published without a human when a tool-less model reviews it `SAFE`, rather than a PR per
+  curation: hourly curation would mean hourly PRs. The review is probabilistic (an injection can fool it), so it
+  is a second layer behind the vetting gate and it fails closed to a PR.
 
 ## 12. Open questions
 

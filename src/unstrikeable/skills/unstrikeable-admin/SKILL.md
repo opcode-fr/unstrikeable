@@ -99,8 +99,13 @@ their own agent installs the instance and stops at the human gates.
   alert; only `uns resume` restarts it. Board work only (closed tasks + the task in progress, Bot Chat counters):
   Slack chats do not count. Day = calendar day, month = rolling 30 days; history starts empty on upgrade. Needs a
   `meter` in `local.yml`, or the piped counters of `uns_poll_isolated.sh`.
-- Memory: `memory.curator` in `config.yml`. The curator's PR on the config repo must be reviewed by a human:
-  shared memory is read by every agent, it is the main injection risk.
+- Memory: `memory.curator` in `config.yml` (pick an agent who knows the subjects, e.g. the PM). Curated memory is
+  published by `uns memory-publish`: reviewed `SAFE` by the `memory_review` command of the curator's `local.yml`
+  (a model with **no tools**) → default branch; otherwise a PR a human must review. No `memory_review` = always a
+  PR. Shared memory is read by every agent, it is the main injection risk.
+- Vetting gate: items with content from a non-member get `needs:vetting`; a member reads it and **comments** to
+  give the go (removing the label by hand does not work: the next poll sets it again). Run `uns layout --apply`
+  once after upgrading so the label exists with its colour.
 
 ## Pitfalls
 
