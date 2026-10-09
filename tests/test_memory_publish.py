@@ -135,3 +135,29 @@ def test_a_failed_push_keeps_the_curators_work_and_the_branch_clean_of_it(repo):
         publish(a, "capucine", "x", review=lambda p: "FLAG: unsure", gh=Gh(), now=T0)
     assert (a / "memory" / "shared" / "board.md").exists()
     assert git(a, "log", "--oneline").count("\n") == 1                    # only the init commit
+
+
+def test_wiki_mode_appends_the_summary_to_the_log(repo):
+    a, remote = repo
+    curate(a)
+    out = publish(a, "didier", "kept 1, dropped 1", lambda p: "SAFE", gh=None, now=T0, log=True)
+    assert "published" in out
+    log = git(a, "show", "HEAD:memory/shared/log.md")
+    assert log.startswith("## [2026-10-03] curate | 2 inbox entries, 2 pages") and "kept 1, dropped 1" in log
+
+
+def test_the_curator_cannot_edit_the_log(repo):
+    a, _ = repo
+    curate(a)
+    (a / "memory" / "shared" / "log.md").write_text("## [2020-01-01] forged\n")
+    with pytest.raises(ValueError, match="log.md"):
+        publish(a, "didier", "x", lambda p: "SAFE", gh=None, now=T0, log=True)
+
+
+def test_a_failed_push_does_not_leave_a_log_entry_to_duplicate(repo):
+    a, remote = repo
+    curate(a)
+    git(a, "remote", "set-url", "origin", str(remote) + "-missing")
+    with pytest.raises(RuntimeError):
+        publish(a, "didier", "x", lambda p: "FLAG: no", gh=lambda args: "url", now=T0, log=True)
+    assert not (a / "memory" / "shared" / "log.md").exists()

@@ -113,6 +113,11 @@ memory:
   curator: kevin                # consolidates memory/inbox into memory/shared, through a PR
   inbox_max: 10                 # curate at 10 new entries…
   max_age_h: 24                 # …or when the oldest is a day old
+  wiki: false                   # true: inject only memory/shared/index.md (§8.7)
+  lint_days: 7                  # wiki mode: lint at least this often, even with an empty inbox
+  ingest_sources:               # what `uns ingest` may point at (§8.8): path prefixes, URLs exact or by prefix
+    - ~/vault/Support
+    - https://docs.example.com/
 ```
 
 `trusted_authors` (per department, optional): GitHub logins of **humans** whose items need no assignment label.
@@ -495,6 +500,29 @@ Folders are split by **lifecycle**, not by owner, so the curator scans one place
 6. **Content**: reusable facts and procedures, no session logs. Size caps (`memory.shared_max_words`, default
    3000; `memory.private_max_words`, default 1500): above them the event carries a warning asking the owner (or the
    curator for `shared/`) to condense instead of piling up.
+7. **Shared memory as a wiki** (after Karpathy's "LLM Wiki"), opt-in with `memory.wiki: true`: `memory/shared/`
+   holds one page per topic and an `index.md` (one line per page with its summary). Events then inject only the
+   index, with the absolute path of `memory/shared/`, and the agent opens the pages it needs, so team knowledge grows
+   without growing every prompt; `shared_max_words` then caps the index. Off (default), or without `index.md`, every
+   file is injected as before. The curator keeps the index in sync and lints on every curation (duplicates, stale
+   lines, orphans, contradictions, concepts without a page, missing links), and at least every
+   `memory.lint_days` (default 7) through a `curator.lint` event even when the inbox is empty. The code checks
+   what a model should not be trusted with (page missing from the index, index line or link to nothing, link out of
+   `memory/shared`) and lists it in the event. `uns memory-publish` appends each summary to `memory/shared/log.md`
+   (`## [date] curate|lint | N inbox entries, P pages, W words`, never injected into prompts, never edited by the
+   curator): the history of the wiki and its growth, `grep '^## \[' memory/shared/log.md`. Each ingested source
+   gets a page in `sources/` (what it brought, when), to know what to re-ingest.
+8. **Ingesting existing knowledge**: `uns ingest --agent A --source <path|url>` queues an inbox entry
+   (`kind: ingest`) pointing at docs, a notes vault or resolved tickets. The source must be in
+   `memory.ingest_sources` (path prefixes, URLs exact or by prefix), a list humans change by PR on `config.yml`:
+   a deterministic gate, so an agent hit by a prompt injection cannot point the curator at `~/.hermes/.env`. The
+   check runs at queue time and again when the curation event is rendered (refused entries are listed as such),
+   and `uns remember` refuses a body that claims `kind: ingest`. Only the pointer enters the config repo:
+   the curator reads the source from its own instance and writes derived, anonymised pages, through the same
+   reviewed publication as any curation. What it is for: seed a new company's agents with what the humans
+   already know. Limits: the source must be readable from the curator's instance; raw sources (which may hold
+   personal data) never land under `memory/`; the curator ingests what fits the cap, the entry is deleted once
+   processed, and the summary lists what was left out for a human to queue again.
 
 The only exception to "no agent pushes to a default branch": `memory/agents/<self>/` and `memory/inbox/<self>/` in the
 config repo, and `memory/shared/` through `uns memory-publish` after a `SAFE` review.

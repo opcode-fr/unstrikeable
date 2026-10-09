@@ -14,7 +14,7 @@ from pathlib import Path
 from .backends.base import Board
 from .config import DEFAULT_MEMORY, Company, Department
 from .events import Event, events_for, needs_vetting
-from .memory import curation_due, inbox, read_memory
+from .memory import curation_due, inbox, ingest_sources, log_tail, read_memory, wiki_problems
 from .meter import Usage, usage_delta
 from .model import AGENT_MARK, BLOCKING, VETTING, Item
 from .status import hhmm, lease_step, parse_status
@@ -97,11 +97,28 @@ def render(co: Company, dept: Department, ev: Event | None, item: Item, agent: s
     return "\n".join(lines + _footer(it.ref, agent, dept.flow.kinds))
 
 
-def render_curation(co: Company, agent: str, files: list[str], note: str = "") -> str:
+def render_curation(co: Company, agent: str, files: list[str], note: str = "", trigger: str = "curator.curate") -> str:
     lines = _context(co, agent)
-    lines += ["## Event", "[uns] agent=%s event=curator.curate item=%s" % (agent, MEMORY_REF),
-              "config repo: %s" % co.root, "inbox entries to process:"]
-    lines += ["  - %s" % f for f in files]
+    mcfg = {**DEFAULT_MEMORY, **co.memory}
+    lines += ["## Event", "[uns] agent=%s event=%s item=%s" % (agent, trigger, MEMORY_REF),
+              "config repo: %s" % Path(co.root).resolve(), "wiki mode: %s" % ("on" if mcfg.get("wiki") else "off")]
+    if files:
+        lines += ["inbox entries to process:"] + ["  - %s" % f for f in files]
+    else:
+        lines += ["no inbox entry: periodic lint of the wiki only (playbook step 4)"]
+    if mcfg.get("wiki"):
+        problems = wiki_problems(co.root)
+        lines += ["", "Wiki checks (fix them all): " + ("none" if not problems else "")]
+        lines += ["  - %s" % p for p in problems]
+        recent = log_tail(co.root)
+        if recent:
+            lines += ["", "Last entries of memory/shared/log.md:"] + ["  %s" % r for r in recent]
+    ok, refused = ingest_sources(co.root, files, mcfg.get("ingest_sources") or [])
+    if ok:
+        lines += ["", "Ingest sources you may read (checked against memory.ingest_sources): " + ", ".join(ok)]
+    if refused:
+        lines += ["", "Ingest entries pointing outside memory.ingest_sources, do NOT read their source, delete them "
+                      "and list them as rejected: " + ", ".join(refused)]
     if note:
         lines += ["", note]
     text = _read(co.root / "playbooks" / "memory" / "curate.md") or _read(SHIPPED / "playbooks/memory/curate.md")
@@ -190,7 +207,18 @@ def poll(agent: str, co: Company, boards: dict[str, Board], state: dict, now: in
             work["current"] = {"key": key, "ref": MEMORY_REF, "department": None, "trigger": "curator.curate",
                                "files": due, "delivered0": now, "delivered": now, "retries": 0,
                                "usage0": usage() if usage else None}
+            work["memory_linted"] = now                                 # a curation lints too
             return _finish(state, work, seen, render_curation(co, agent, due), dry_run)
+        days = mcfg.get("lint_days") or 0
+        if mcfg.get("wiki") and days > 0:
+            work.setdefault("memory_linted", now)                       # first lint one period after wiki mode
+            if now - work["memory_linted"] >= days * 86400:
+                work["memory_linted"] = now
+                work["memory_status"] = None
+                work["current"] = {"key": "memory|lint|%d" % now, "ref": MEMORY_REF, "department": None,
+                                   "trigger": "curator.lint", "files": [], "delivered0": now, "delivered": now,
+                                   "retries": 0, "usage0": usage() if usage else None}
+                return _finish(state, work, seen, render_curation(co, agent, [], trigger="curator.lint"), dry_run)
 
     # 3. free: pick the next board event, one at a time
     for dept in depts.values():
@@ -267,7 +295,7 @@ def _lease(agent: str, co: Company, boards: dict[str, Board], depts: dict[str, D
                 "RESUME: no sign of life for %d min, you were probably interrupted. "
                 "Resume from the current state (branch, comments, your status)." % limits["stale_min"])
         if memory_task:
-            return render_curation(co, agent, cur.get("files") or [], note)
+            return render_curation(co, agent, cur.get("files") or [], note, trigger=cur["trigger"])
         assert dept is not None and it is not None            # not gone
         return render(co, dept, None, it, agent, cur["trigger"], note)
     why = ("%s stopped answering on %s (`%s` sent at %s, nudged once, no activity)." % (

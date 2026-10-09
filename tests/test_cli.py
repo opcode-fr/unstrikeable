@@ -443,7 +443,7 @@ def test_memory_publish_hands_the_configured_reviewer_to_publish(env, monkeypatc
     (home / "local.yml").write_text((home / "local.yml").read_text() + "memory_review:\n  - cat\n")
     got = {}
 
-    def fake(root, agent, summary, review, gh, env=None, now=None):
+    def fake(root, agent, summary, review, gh, env=None, now=None, log=False):
         got.update(agent=agent, summary=summary, answer=review("SAFE\nprompt on stdin"))
         return "published"
     monkeypatch.setattr(cli, "publish", fake)

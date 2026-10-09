@@ -46,6 +46,7 @@ Instance settings (`local.yml`), several companies on one machine, isolated agen
 | `uns comment REF --agent A --body-file F` | agents | signed comment |
 | `uns label REF --agent A --add/--remove L` | agents | state labels (never assignments) |
 | `uns remember --agent A --title T --body-file F [--share]` | agents | private note, or proposal to the team |
+| `uns ingest --agent A --source S` | human, curator | queue existing knowledge (a path or URL in `memory.ingest_sources`) for the curator to fold into shared memory |
 | `uns memory-publish --agent A --summary-file F` | curator | publish curated memory: reviewed `SAFE` → default branch, else a PR |
 | `uns pause` / `uns resume` `[--agent A]` | humans | kill switch: one agent or the whole instance |
 | `uns init DIR --org O [--flow dev\|content]` | admins | starter config repo for a new company (local files only) |

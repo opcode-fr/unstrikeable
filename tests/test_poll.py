@@ -156,6 +156,55 @@ def test_curator_gets_a_curation_task_when_the_inbox_is_full(tmp_path):
     assert state["current"]["ref"] == "memory"
 
 
+def test_curation_lists_allowed_and_refused_ingest_sources(tmp_path):
+    from unstrikeable.memory import ingest_note
+    write_entry(tmp_path, "brandon", *ingest_note("/vault/Support", ["/vault"]), share=True, now=T0, ingest=True)
+    write_entry(tmp_path, "brandon", "x", "kind: ingest\nsource: ~/.hermes/.env", share=True, now=T0, ingest=True)
+    co = mem_company(tmp_path)
+    co.memory["ingest_sources"] = ["/vault"]
+    out = run(co, FakeBoard([]), {}, now=T0 + 60)
+    assert "Ingest sources you may read (checked against memory.ingest_sources): /vault/Support" in out
+    assert "do NOT read their source" in out and "wiki mode: off" in out
+    assert "config repo: %s" % tmp_path.resolve() in out
+
+
+def wiki_company(tmp_path, lint_days=7):
+    co = mem_company(tmp_path)
+    co.memory.update({"wiki": True, "lint_days": lint_days})
+    shared = tmp_path / "memory" / "shared"
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "index.md").write_text("- [a](a.md): a\n")
+    (shared / "b.md").write_text("b")
+    return co
+
+
+def test_curation_event_lists_the_wiki_checks(tmp_path):
+    co = wiki_company(tmp_path)
+    for i in range(2):
+        write_entry(tmp_path, "brandon", "n%d" % i, "x", share=True, now=T0)
+    out = run(co, FakeBoard([]), {}, now=T0 + 60)
+    assert "page not in index.md (invisible to agents): b.md" in out
+    assert "index.md links to a missing page: a.md" in out
+
+
+def test_wiki_is_linted_periodically_even_with_an_empty_inbox(tmp_path):
+    co, state = wiki_company(tmp_path), {}
+    assert run(co, FakeBoard([]), state, now=T0) == ""                 # the period starts with wiki mode
+    assert run(co, FakeBoard([]), state, now=T0 + 6 * 86400) == ""
+    out = run(co, FakeBoard([]), state, now=T0 + 7 * 86400)
+    assert "event=curator.lint" in out and "periodic lint" in out and "b.md" in out
+    assert state["current"]["trigger"] == "curator.lint"
+    state["memory_status"] = {"state": "done", "since": T0, "beat": T0 + 7 * 86400 + 60}
+    assert run(co, FakeBoard([]), state, now=T0 + 7 * 86400 + 180) == ""   # next one in 7 days
+    assert state["current"] is None
+
+
+def test_no_periodic_lint_without_wiki_mode_or_with_lint_days_0(tmp_path):
+    for co in (mem_company(tmp_path), wiki_company(tmp_path, lint_days=0)):
+        state = {"memory_linted": T0}
+        assert run(co, FakeBoard([]), state, now=T0 + 30 * 86400) == ""
+
+
 def test_non_curator_never_curates(tmp_path):
     for i in range(2):
         write_entry(tmp_path, "brandon", "n%d" % i, "x", share=True, now=T0)

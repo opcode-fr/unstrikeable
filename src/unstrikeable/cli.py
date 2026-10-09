@@ -20,7 +20,7 @@ from .backends.base import Board
 from .backends.github import GitHubBoard, GitHubError
 from .config import DEFAULT_MEMORY, Company, ConfigError, Department, load_company
 from .digest import digest
-from .memory import commit_and_push, publish, pull, write_entry
+from .memory import commit_and_push, ingest_note, publish, pull, write_entry
 from .meter import hermes_state_db, make_usage, parse_usage, read_bot_chat_usage
 from .model import AGENT_MARK
 from .poll import MEMORY_REF, baseline, poll
@@ -394,9 +394,9 @@ def cmd_update(a: argparse.Namespace) -> None:
     print(admin.update(local, load(local).runtime))
 
 
-def _remember(co: Company, agent: str, title: str, body: str, share: bool) -> Path:
+def _remember(co: Company, agent: str, title: str, body: str, share: bool, ingest: bool = False) -> Path:
     try:
-        path = write_entry(co.root, agent, title, body, share=share)
+        path = write_entry(co.root, agent, title, body, share=share, ingest=ingest)
     except ValueError as e:
         raise UsageError(str(e)) from e
     if (co.root / ".git").exists():
@@ -433,6 +433,16 @@ def reviewer(argv: object):
     return review
 
 
+def cmd_ingest(a: argparse.Namespace) -> None:
+    co = load(load_local())
+    try:
+        title, body = ingest_note(a.source, {**DEFAULT_MEMORY, **co.memory}.get("ingest_sources") or [], a.title)
+    except ValueError as e:
+        raise UsageError(str(e)) from e
+    path = _remember(co, a.agent, title, body, share=True, ingest=True)
+    print("queued for the curator: %s" % path.relative_to(co.root))
+
+
 def cmd_memory_publish(a: argparse.Namespace) -> None:
     local = load_local()
     co = load(local)
@@ -452,7 +462,8 @@ def cmd_memory_publish(a: argparse.Namespace) -> None:
             raise UsageError("gh %s: %s" % (" ".join(args[:2]), p.stderr.strip()[:300]))
         return p.stdout
     try:
-        print(publish(co.root, a.agent, summary, reviewer(local.get("memory_review")), gh, env=env))
+        print(publish(co.root, a.agent, summary, reviewer(local.get("memory_review")), gh, env=env,
+                      log=bool({**DEFAULT_MEMORY, **co.memory}.get("wiki"))))
     except (ValueError, RuntimeError) as e:
         raise UsageError(str(e)) from e
 
@@ -602,6 +613,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--body-file")
     p.add_argument("--share", action="store_true")
     p.set_defaults(fn=cmd_remember)
+    p = sp.add_parser("ingest", help="queue existing knowledge (a path or URL) for the curator to fold into the wiki")
+    p.add_argument("--agent", required=True, help="who queues it (usually the curator)")
+    p.add_argument("--source", required=True, help="path or URL readable from the curator's instance")
+    p.add_argument("--title")
+    p.set_defaults(fn=cmd_ingest)
     p = sp.add_parser("memory-publish", help="curator: publish curated memory (reviewed: default branch, else a PR)")
     p.add_argument("--agent", required=True)
     p.add_argument("--summary")
