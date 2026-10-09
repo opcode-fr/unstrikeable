@@ -266,3 +266,8 @@ def test_a_routed_item_waits_for_its_busy_agent():
     d = trusting({"jerome": "jeanmichel"})
     items = [by("jerome", n=2), by("x", "doing", ["dev:jeanmichel"], n=1)]
     assert kinds("jeanmichel", items, d) == [] and kinds("gerard", items, d) == []
+
+
+def test_routing_never_makes_an_agent_dev_of_an_item_it_reviews():
+    d = trusting({"jerome": "jeanmichel"})
+    assert kinds("jeanmichel", [by("jerome", labels=["review:jeanmichel"])], d) == []
