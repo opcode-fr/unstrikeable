@@ -114,6 +114,7 @@ memory:
   inbox_max: 10                 # curate at 10 new entries…
   max_age_h: 24                 # …or when the oldest is a day old
   wiki: false                   # true: inject only memory/shared/index.md (§8.7)
+  lint_days: 7                  # wiki mode: lint at least this often, even with an empty inbox
   ingest_sources:               # what `uns ingest` may point at (§8.8): path prefixes, URLs exact or by prefix
     - ~/vault/Support
     - https://docs.example.com/
@@ -503,8 +504,14 @@ Folders are split by **lifecycle**, not by owner, so the curator scans one place
    holds one page per topic and an `index.md` (one line per page with its summary). Events then inject only the
    index, with the absolute path of `memory/shared/`, and the agent opens the pages it needs, so team knowledge grows
    without growing every prompt; `shared_max_words` then caps the index. Off (default), or without `index.md`, every
-   file is injected as before. The curator keeps the index in sync and lints (duplicates, stale lines, orphan
-   pages) on every curation.
+   file is injected as before. The curator keeps the index in sync and lints on every curation (duplicates, stale
+   lines, orphans, contradictions, concepts without a page, missing links), and at least every
+   `memory.lint_days` (default 7) through a `curator.lint` event even when the inbox is empty. The code checks
+   what a model should not be trusted with (page missing from the index, index line or link to nothing, link out of
+   `memory/shared`) and lists it in the event. `uns memory-publish` appends each summary to `memory/shared/log.md`
+   (`## [date] curate|lint | N inbox entries, P pages, W words`, never injected into prompts, never edited by the
+   curator): the history of the wiki and its growth, `grep '^## \[' memory/shared/log.md`. Each ingested source
+   gets a page in `sources/` (what it brought, when), to know what to re-ingest.
 8. **Ingesting existing knowledge**: `uns ingest --agent A --source <path|url>` queues an inbox entry
    (`kind: ingest`) pointing at docs, a notes vault or resolved tickets. The source must be in
    `memory.ingest_sources` (path prefixes, URLs exact or by prefix), a list humans change by PR on `config.yml`:

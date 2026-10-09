@@ -3,8 +3,8 @@ import subprocess
 
 import pytest
 
-from unstrikeable.memory import (allowed_source, commit_and_push, curation_due, inbox, ingest_note, ingest_sources,
-                                 read_memory, slugify, write_entry)
+from unstrikeable.memory import (allowed_source, append_log, commit_and_push, curation_due, inbox, ingest_note,
+                                 ingest_sources, log_tail, read_memory, slugify, wiki_problems, write_entry)
 
 T0 = 1_791_000_000          # 2026-10-03
 
@@ -194,3 +194,32 @@ def test_curation_rechecks_ingest_sources(tmp_path):
     files = [str(f.relative_to(tmp_path)) for f in (good, bad, plain)]
     assert ingest_sources(tmp_path, files, ALLOWED) == (["/vault/Support"], [files[1]])
     assert ingest_sources(tmp_path, files, []) == ([], files[:2])
+
+
+def test_wiki_checks_find_unindexed_pages_and_dead_links(tmp_path):
+    shared = wiki(tmp_path, "- [review](review.md): how\n- [gone](gone.md): deleted\n- [out](../../config.md): x\n")
+    (shared / "board.md").write_text("See [review](review.md) and [nope](nope.md#x).")
+    problems = wiki_problems(tmp_path)
+    assert "page not in index.md (invisible to agents): board.md" in problems
+    assert "index.md links to a missing page: gone.md" in problems
+    assert "board.md links to a missing page: nope.md" in problems
+    assert any("links outside memory/shared" in p for p in problems)
+    assert not any("review.md" in p for p in problems)
+
+
+def test_wiki_checks_ask_for_an_index_and_pass_on_a_clean_wiki(tmp_path):
+    (tmp_path / "memory" / "shared").mkdir(parents=True)
+    assert wiki_problems(tmp_path) == ["`index.md` is missing: create it (one line per page)"]
+    (tmp_path / "memory" / "shared" / "index.md").write_text("")
+    assert wiki_problems(tmp_path) == []
+
+
+def test_the_log_is_parseable_measures_growth_and_is_never_injected(tmp_path):
+    wiki(tmp_path)
+    append_log(tmp_path, "curate", "kept 2, dropped 1", 3, now=T0)
+    append_log(tmp_path, "lint", "merged a duplicate", 0, now=T0 + 86400)
+    assert log_tail(tmp_path) == ["## [2026-10-03] curate | 3 inbox entries, 1 pages, 200 words",
+                                  "## [2026-10-04] lint | 0 inbox entries, 1 pages, 200 words"]
+    for caps in (WIKI, {**WIKI, "wiki": False}):
+        assert "merged a duplicate" not in read_memory(tmp_path, "kevin", caps)[0]
+    assert "page not in index.md (invisible to agents): log.md" not in wiki_problems(tmp_path)

@@ -107,6 +107,58 @@ def _section(files: list[Path], root: Path) -> str:
 
 
 WIKI_INDEX = "index.md"
+WIKI_LOG = "log.md"                 # append-only, written by `uns memory-publish`, never injected into prompts
+LINK_RE = re.compile(r"\]\(([^)#\s]+\.md)(?:#[^)]*)?\)")
+
+
+def _shared_pages(root: Path) -> list[Path]:
+    return [f for f in _files(mem(root) / "shared") if f.name != WIKI_LOG or f.parent != mem(root) / "shared"]
+
+
+def wiki_problems(root: Path) -> list[str]:
+    """Deterministic wiki checks for the curator: pages missing from the index, index lines or links pointing at
+    nothing. A page that is not in the index is invisible to agents in wiki mode."""
+    shared = mem(Path(root)) / "shared"
+    index = shared / WIKI_INDEX
+    if not index.exists():
+        return ["`index.md` is missing: create it (one line per page)"]
+    pages = {f.relative_to(shared).as_posix() for f in _shared_pages(root)} - {WIKI_INDEX}
+    problems, listed = [], set()
+    for f in [index] + sorted(shared / p for p in pages):
+        for link in LINK_RE.findall(f.read_text()):
+            if "://" in link:
+                continue
+            target = (f.parent / link).resolve()
+            try:
+                rel = target.relative_to(shared.resolve()).as_posix()
+            except ValueError:
+                problems.append("%s links outside memory/shared: %s" % (f.relative_to(shared).as_posix(), link))
+                continue
+            if f == index:
+                listed.add(rel)
+            if not target.exists():
+                problems.append("%s links to a missing page: %s" % (f.relative_to(shared).as_posix(), link))
+    problems += ["page not in index.md (invisible to agents): %s" % p for p in sorted(pages - listed)]
+    return problems
+
+
+def log_tail(root: Path, n: int = 5) -> list[str]:
+    log = mem(Path(root)) / "shared" / WIKI_LOG
+    return [ln for ln in log.read_text().splitlines() if ln.startswith("## [")][-n:] if log.exists() else []
+
+
+def append_log(root: Path, kind: str, summary: str, processed: int, now: int | None = None) -> Path:
+    """One parseable entry per publication (`## [date] kind | …`): what the wiki became, so its growth can be
+    measured (`grep '^## \\[' memory/shared/log.md`) and the curator knows what was done recently."""
+    now = int(time.time()) if now is None else now
+    pages = [f for f in _shared_pages(root) if f.name != WIKI_INDEX]
+    words = sum(len(f.read_text().split()) for f in pages)
+    log = mem(Path(root)) / "shared" / WIKI_LOG
+    head = "## [%s] %s | %d inbox entries, %d pages, %d words\n" % (
+        time.strftime("%Y-%m-%d", time.localtime(now)), kind, processed, len(pages), words)
+    with log.open("a") as fh:
+        fh.write(("\n" if log.stat().st_size else "") + head + summary.strip() + "\n")
+    return log
 
 
 def read_memory(root: Path, agent: str, caps: dict) -> tuple[str, str, list[str]]:
@@ -120,7 +172,7 @@ def read_memory(root: Path, agent: str, caps: dict) -> tuple[str, str, list[str]
         shared = "Shared memory is a wiki in `%s`: read the pages relevant to this task before acting.\n\n%s" % (
             index.parent, _section([index], root))
     else:
-        shared = _section(_files(mem(root) / "shared"), root)
+        shared = _section(_shared_pages(root), root)
     private = _section(_files(mem(root) / "agents" / agent), root)
     warnings = []
     if len(private.split()) > caps.get("private_max_words", 1500):
@@ -238,6 +290,8 @@ def curated_changes(root: Path) -> tuple[list[str], list[str], list[str]]:
     shared, new, dropped = [], [], []
     for line in _git(Path(root), "status", "--porcelain", "-uall", "--", "memory").splitlines():
         code, path = line[:2], line[3:]
+        if path == "memory/shared/" + WIKI_LOG:
+            raise ValueError("memory/shared/%s is written by `uns memory-publish`, do not edit it" % WIKI_LOG)
         if path.startswith("memory/shared/"):
             shared.append(path)
             if code == "??":
@@ -250,7 +304,7 @@ def curated_changes(root: Path) -> tuple[list[str], list[str], list[str]]:
 
 
 def publish(root: Path, agent: str, summary: str, review: Reviewer | None, gh: Callable[[list[str]], str],
-            env: dict | None = None, now: int | None = None) -> str:
+            env: dict | None = None, now: int | None = None, log: bool = False) -> str:
     """Publish the curator's uncommitted work: straight to the default branch when the review passes,
     else on a branch with a PR for a human (the clone is left clean, on its branch)."""
     root = Path(root).resolve()
@@ -261,6 +315,16 @@ def publish(root: Path, agent: str, summary: str, review: Reviewer | None, gh: C
         _git(root, "add", "-N", "--", *new)          # show new files in the diff
     ok, why = verdict(_git(root, "diff", "--", *shared) if shared else "", review)
     paths = [root / p for p in shared + dropped]
+    logfile = mem(root) / "shared" / WIKI_LOG
+    before = logfile.read_text() if logfile.exists() else None
+    if log:                                         # written by code after the review: never agent-edited
+        paths.append(append_log(root, "curate" if dropped else "lint", summary, len(dropped), now=now))
+
+    def undo_log() -> None:                         # a retry must not append the same entry twice
+        if log and before is None:
+            logfile.unlink(missing_ok=True)
+        elif log:
+            logfile.write_text(before)
     msg = "memory(%s): curate %d entries\n\n%s" % (agent, len(dropped), summary.strip())
     if ok:
         commit_and_push(root, paths, msg, env=env)
@@ -275,6 +339,7 @@ def publish(root: Path, agent: str, summary: str, review: Reviewer | None, gh: C
         _git(root, "push", "-q", "origin", "HEAD:refs/heads/" + branch, env=env)
     except RuntimeError:
         _git(root, "reset", "-q", "HEAD~1")             # undo the commit, keep the curator's work to retry
+        undo_log()
         raise
     _git(root, "reset", "-q", "--keep", "HEAD~1")       # the default branch never carries a held change
     url = gh(["pr", "create", "--base", base, "--head", branch, "--title", "memory: curate %d entries" % len(dropped),

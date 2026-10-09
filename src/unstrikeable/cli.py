@@ -462,7 +462,8 @@ def cmd_memory_publish(a: argparse.Namespace) -> None:
             raise UsageError("gh %s: %s" % (" ".join(args[:2]), p.stderr.strip()[:300]))
         return p.stdout
     try:
-        print(publish(co.root, a.agent, summary, reviewer(local.get("memory_review")), gh, env=env))
+        print(publish(co.root, a.agent, summary, reviewer(local.get("memory_review")), gh, env=env,
+                      log=bool({**DEFAULT_MEMORY, **co.memory}.get("wiki"))))
     except (ValueError, RuntimeError) as e:
         raise UsageError(str(e)) from e
 

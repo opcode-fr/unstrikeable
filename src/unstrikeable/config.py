@@ -28,6 +28,7 @@ DEFAULT_MEMORY = {
     "private_max_words": 1500,
     "wiki": False,            # inject only memory/shared/index.md; the agent opens the pages it needs
     "ingest_sources": [],     # what `uns ingest` may point at: path prefixes, URLs (exact or prefix). Humans, by PR
+    "lint_days": 7,           # wiki mode: lint the wiki at least this often, even with an empty inbox (0 = never)
 }
 
 DEFAULT_LIMITS = {
