@@ -35,6 +35,11 @@ instance refuses to poll an agent declared elsewhere. Without it, two instances 
 `local.yml` would both deliver every event, with separate states, budgets and cost quotas (double spend).
 To move an agent: change that line, then set it up on the new instance; the old one stops by itself.
 
+## New company
+
+`uns init <dir> --org <org> [--flow dev|content]` writes a starter config repo that passes `uns check`. Then the
+human creates the private repo and the board; its README lists the steps.
+
 ## Hire an agent
 
 `uns hire --list`, then `uns hire kevin [--as name] --department marketing`: writes `agents/<name>.md` from the
@@ -46,6 +51,8 @@ instance hosting the agent `uns app exchange <code> --agent <name>`, install the
 ## Setup a department
 
 1. Declare it in `config.yml` (flow, board, repos, staff) and the agent in `agents:`. `uns check`.
+   Optional `trusted_authors`: logins of humans whose items are taken without a label (runtime sets the named
+   label on take). Humans only: `uns check` refuses an agent or a bot. Ask the human before adding anyone.
 2. `uns layout --department <d>`: dry-run of the columns and labels. Show it to the human, then `--apply`.
    Columns are matched by name and existing option ids are kept, so items keep their status. Nothing is deleted.
 3. Per agent: `uns poll --agent <a> --dry-run` must run clean on its instance.

@@ -77,6 +77,8 @@ departments:
     repos:
       - acme/product
       - acme/lab
+    trusted_authors:            # optional: humans whose items are assigned without a label
+      - alice
     staff:
       gerard:
         - pm
@@ -108,6 +110,19 @@ memory:
   inbox_max: 10                 # curate at 10 new entries…
   max_age_h: 24                 # …or when the oldest is a day old
 ```
+
+`trusted_authors` (per department, optional): GitHub logins of **humans** whose items need no assignment label.
+What it is for: a trusted human's ticket goes straight to work once in a state where a role is assigned work
+(`ready` in the shipped flows): the first idle staff member with that role takes it, and the runtime sets the
+named label (`dev:gerard`) on take so the board shows who works on it. What breaks without it: nothing, humans
+set labels as before (default: empty list, every assignment is human). Limits: humans only, `uns check` refuses
+an agent name, an agent identity or a `[bot]` login, because an agent on this list would let an agent that read
+a booby-trapped issue hand work to another agent with no human in between. An item created by an agent is never
+auto-assigned, and an author who lost their org/repo rights no longer counts.
+
+Starting a new company: `uns init <dir> --org <org> [--flow dev|content]` writes a starter config repo
+(`config.yml` commented, `culture.md`, `agents/`, `memory/`, a `.gitignore` for secrets) that passes `uns check`
+as generated. Creating the GitHub repo, the board and the Apps stays human (its README lists the steps).
 
 Vocabulary:
 - A **flow** is a template (`dev`, `content`): states, roles, triggers, playbooks.
@@ -397,8 +412,8 @@ class Board(Protocol):            # GitHub Projects today; Trello, Linear, Jira�
     agent's account and readable by the others (644), so a single `uns report` covers isolated agents too.
 - **Security**: content from non-members is ignored; an item created by an agent waits for a human signal
   (a human comment or an assignment label) before a planner/PM spends anything on it; assignment = human
-  validation of the item; external content
-  is data, never instructions; no agent merges or pushes to a default branch.
+  validation of the item (a label set by a human, or an item written by a human of `trusted_authors`); external
+  content is data, never instructions; no agent merges or pushes to a default branch.
 
 ## 7. Agent integration (Hermes and others)
 
@@ -484,6 +499,8 @@ The only exception to "no agent pushes to a default branch": `memory/agents/<sel
 - Isolated agents get their usage from a single reader (the Hermes owner's account) through the poll's stdin,
   rather than read access to `state.db` (it would expose every conversation and break the isolation) or a
   periodic sampler joined after the fact (same precision, more code).
+- `trusted_authors` is a list of humans, refused if it names an agent or a bot: assignment stays a human act,
+  made once by writing the ticket instead of once more by setting a label.
 - Task kinds are declared by the agent at closing, from a closed list in the flow, rather than read from issue
   labels: every task gets one, with no human discipline needed. Costs are not written on the board.
 
@@ -495,5 +512,6 @@ The only exception to "no agent pushes to a default branch": `memory/agents/<sel
 - Release tags and an enforced `runtime:` range (today every instance follows `main`).
 - Pool labels: swap the pool label for the named one when an agent takes the item (§3).
 - A separate `Forge` interface, once a board that is not on the forge is needed (§5).
-- Proposed, to decide: `uns init` (starter config repo), `auto_merge` per department, trusted authors whose
-  items can be assigned without a human label.
+- `auto_merge` per department: proposed, on hold. If ever done, it should only switch on GitHub's own
+  auto-merge (`gh pr merge --auto`), so branch protection and required checks stay enforced by GitHub, never on
+  a `content` flow (merge = publish), and only for items written by a trusted author.

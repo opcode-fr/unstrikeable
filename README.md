@@ -47,6 +47,7 @@ Instance settings (`local.yml`), several companies on one machine, isolated agen
 | `uns label REF --agent A --add/--remove L` | agents | state labels (never assignments) |
 | `uns remember --agent A --title T --body-file F [--share]` | agents | private note, or proposal to the team |
 | `uns pause` / `uns resume` `[--agent A]` | humans | kill switch: one agent or the whole instance |
+| `uns init DIR --org O [--flow dev\|content]` | admins | starter config repo for a new company (local files only) |
 | `uns layout [--department D] [--apply]` | admins | create missing columns and labels |
 | `uns hire PRESET [--as NAME] [--department D]` / `--list` | admins | add an agent from a preset |
 | `uns app form --org O --agent A` / `uns app exchange CODE --agent A` | admins | create the agent's GitHub App |
