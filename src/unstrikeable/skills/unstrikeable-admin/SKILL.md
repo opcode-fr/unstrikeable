@@ -52,7 +52,8 @@ instance hosting the agent `uns app exchange <code> --agent <name>`, install the
 
 1. Declare it in `config.yml` (flow, board, repos, staff) and the agent in `agents:`. `uns check`.
    Optional `trusted_authors`: logins of humans whose items are taken without a label (runtime sets the named
-   label on take). Humans only: `uns check` refuses an agent or a bot. Ask the human before adding anyone.
+   label on take); `login:` alone = first idle staff member, `login: agent` = always that agent. Humans only:
+   `uns check` refuses an agent or a bot. Ask the human before adding anyone.
 2. `uns layout --department <d>`: dry-run of the columns and labels. Show it to the human, then `--apply`.
    Columns are matched by name and existing option ids are kept, so items keep their status. Nothing is deleted.
 3. Per agent: `uns poll --agent <a> --dry-run` must run clean on its instance.

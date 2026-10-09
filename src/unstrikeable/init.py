@@ -24,8 +24,8 @@ departments:
       number: 1                 # number of the GitHub Project (its URL ends with /projects/<number>)
     repos:                      # repos whose issues sit on the board (agents need their App installed there)
       - {org}/CHANGE-ME
-    # trusted_authors:          # optional: humans whose items are assigned without a label (never an agent)
-    #   - your-github-login
+    # trusted_authors:          # optional: humans whose items are taken without a label (never an agent)
+    #   your-github-login:      # empty: first idle staff member; or `login: agent` to route to one agent
     staff:                      # agent -> roles of the flow, filled by `uns hire <preset> --department {department}`
 
 agents:                         # identity and hosting of each agent, filled by `uns hire`

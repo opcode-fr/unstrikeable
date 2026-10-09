@@ -77,8 +77,9 @@ departments:
     repos:
       - acme/product
       - acme/lab
-    trusted_authors:            # optional: humans whose items are assigned without a label
-      - alice
+    trusted_authors:            # optional: humans whose items are taken without a label
+      alice:                    # empty: first idle staff member with the role
+      bob: gerard               # routed: always this agent (waits while it is busy)
     staff:
       gerard:
         - pm
@@ -113,8 +114,10 @@ memory:
 
 `trusted_authors` (per department, optional): GitHub logins of **humans** whose items need no assignment label.
 What it is for: a trusted human's ticket goes straight to work once in a state where a role is assigned work
-(`ready` in the shipped flows): the first idle staff member with that role takes it, and the runtime sets the
-named label (`dev:gerard`) on take so the board shows who works on it. What breaks without it: nothing, humans
+(`ready` in the shipped flows): the first idle staff member with that role takes it, or, when the login is mapped
+to an agent (`bob: gerard`), that agent only (each human working with their own agent). The runtime sets the
+named label (`dev:gerard`) on take so the board shows who works on it. A routed agent never takes an item it
+reviews, and the mapped agent must be in the department's staff (checked at load). What breaks without it: nothing, humans
 set labels as before (default: empty list, every assignment is human). Limits: humans only, `uns check` refuses
 an agent name, an agent identity or a `[bot]` login, because an agent on this list would let an agent that read
 a booby-trapped issue hand work to another agent with no human in between. An item created by an agent is never
