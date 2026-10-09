@@ -21,10 +21,11 @@ from .backends.github import GitHubBoard, GitHubError
 from .config import Company, ConfigError, Department, load_company
 from .digest import digest
 from .memory import commit_and_push, pull, write_entry
-from .meter import make_meter
+from .meter import make_meter, make_usage
 from .model import AGENT_MARK
 from .poll import MEMORY_REF, baseline, poll
 from .presets import hire, list_presets
+from .report import report
 from .status import STATES, parse_status, status_body
 
 CULTURE_MAX_WORDS = 600          # ~1 page; it is injected in every event
@@ -137,9 +138,10 @@ def next_event(agent: str, dry_run: bool = False) -> str:
             agent, me["instance"], local["instance"]))
     state = read_state(agent)
     boards = {d.name: make_board(co, d, agent) for d in co.departments_of(agent)}
-    meter = make_meter(((local.get("agents") or {}).get(agent) or {}).get("meter"))
-    out = poll(agent, co, boards, state, dry_run=dry_run, meter=meter)
+    mcfg = ((local.get("agents") or {}).get(agent) or {}).get("meter")
+    out = poll(agent, co, boards, state, dry_run=dry_run, meter=make_meter(mcfg), usage=make_usage(mcfg))
     if not dry_run:
+        append_tasks(agent, state.pop("finished", None) or [])
         write_state(agent, state)
     return "Load the `unstrikeable-agent` skill and handle this event.\n\n" + out if out else ""
 
@@ -180,6 +182,20 @@ def state_path(agent: str) -> Path:
 def read_state(agent: str) -> dict:
     p = state_path(agent)
     return json.loads(p.read_text()) if p.exists() else {}
+
+
+def tasks_path(agent: str) -> Path:
+    return home() / "state" / ("tasks-%s.jsonl" % agent)
+
+
+def append_tasks(agent: str, records: list[dict]) -> None:
+    """Closed tasks, one JSON line each: append-only, the source of `uns report`."""
+    if not records:
+        return
+    p = tasks_path(agent)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a") as fh:
+        fh.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in records)
 
 
 def write_state(agent: str, state: dict) -> None:
@@ -233,7 +249,12 @@ def _write_status(a: argparse.Namespace) -> None:
         write_state(a.agent, state)
         print("memory status %s -> %s" % (a.agent, a.state))
         return
-    _, _, board = _target(a)
+    _, dept, board = _target(a)
+    kinds = dept.flow.kinds
+    if a.kind and a.kind not in kinds:
+        raise UsageError("unknown kind %r (flow %s: %s)" % (a.kind, dept.flow.name, ", ".join(kinds) or "no kinds"))
+    if a.state == "done" and kinds and not a.kind:
+        raise UsageError("closing a task needs its kind: --kind <%s>" % "|".join(kinds))
     it = board.item(a.ref)
     prev = None
     for c in (it.comments if it else []):
@@ -241,7 +262,7 @@ def _write_status(a: argparse.Namespace) -> None:
     now = int(time.time())
     since = prev["since"] if prev and (prev["state"] == "working" or a.state != "working") else now
     board.upsert_status(a.ref, a.agent, status_body(a.agent, a.state, since, now, a.done or "", a.todo or "",
-                                                    a.note or ""))
+                                                    a.note or "", kind=a.kind or ""))
     print("%s status %s -> %s" % (a.ref, a.agent, a.state))
 
 
@@ -309,6 +330,23 @@ def cmd_digest(a: argparse.Namespace) -> None:
     if new != cursor and not a.dry_run:
         cursor_path.parent.mkdir(parents=True, exist_ok=True)
         cursor_path.write_text(json.dumps({"ts": new}))
+
+
+def cmd_report(a: argparse.Namespace) -> None:
+    records = []
+    for p in sorted((home() / "state").glob("tasks-*.jsonl")):
+        records += [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
+    records = [r for r in records if not a.agent or r.get("agent") == a.agent]
+    if a.json:
+        since = time.time() - a.days * 86400
+        for r in records:
+            if (r.get("end") or 0) >= since:
+                print(json.dumps(r, ensure_ascii=False))
+        return
+    try:
+        print(report(records, [k.strip() for k in a.by.split(",") if k.strip()], int(time.time()), a.days))
+    except ValueError as e:
+        raise UsageError(str(e)) from e
 
 
 def cmd_app(a: argparse.Namespace) -> None:
@@ -432,6 +470,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--todo")
     p.add_argument("--note")
     p.add_argument("--learned", help='required with --state done: "<rule> because <reason>", or "none"')
+    p.add_argument("--kind", help="nature of the task, from the flow's `kinds` (required with --state done)")
     p.add_argument("--share-learned", action="store_true", help="propose the lesson to the team (curator)")
     p = item_cmd("comment", cmd_comment, "comment on an item, signed by the agent")
     p.add_argument("--body")
@@ -457,6 +496,13 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--alerts", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_digest)
+    p = sp.add_parser("report", help="closed tasks: count, outcome, time, tokens, cost, grouped (--by agent,kind)")
+    p.add_argument("--days", type=int, default=30)
+    p.add_argument("--agent")
+    p.add_argument("--by", default="agent,kind", help="comma list of: agent, kind, role, trigger, department, "
+                                                       "flow, outcome")
+    p.add_argument("--json", action="store_true", help="raw records, one JSON per line")
+    p.set_defaults(fn=cmd_report)
     p = sp.add_parser("app", help="create an agent's GitHub App: `form` (owner clicks), then `exchange CODE`")
     asp = p.add_subparsers(dest="action", required=True)
     f = asp.add_parser("form")

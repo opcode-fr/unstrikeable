@@ -31,6 +31,7 @@ def test_first_event_is_delivered_and_becomes_current(tmp_path):
     out = run(company(tmp_path), board, state)
     assert "acme/mkt#1" in out and "writer.assigned" in out
     assert "uns status acme/mkt#1 --agent kevin --state working" in out
+    assert "--state done --kind <post|article|newsletter|research|other> --learned" in out
     assert state["current"]["ref"] == "acme/mkt#1"
 
 

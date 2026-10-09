@@ -233,13 +233,13 @@ def test_done_requires_a_lesson(env, capsys):
 
 def test_done_with_nothing_learned_writes_no_memory(env):
     home, _ = env
-    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--learned", "none"]) == 0
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--kind", "post", "--learned", "none"]) == 0
     assert _notes(home) == []
 
 
 def test_done_with_a_lesson_stores_it_in_private_memory(env):
     home, board = env
-    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done",
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--kind", "post",
                      "--learned", "0.857 vs 0.753 is 10.4 points, not 12: name the model"]) == 0
     notes = _notes(home)
     assert len(notes) == 1 and "10.4 points" in notes[0].read_text() and "acme/mkt#1" in notes[0].read_text()
@@ -248,7 +248,7 @@ def test_done_with_a_lesson_stores_it_in_private_memory(env):
 
 def test_a_lesson_can_be_proposed_to_the_team(env):
     home, _ = env
-    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done",
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--kind", "post",
                      "--learned", "AG News is the only clean comparison", "--share-learned"]) == 0
     assert _notes(home, "inbox") and not _notes(home)
 
@@ -324,3 +324,37 @@ def test_run_honours_the_pause_file(env, tmp_path):
     out, cmd = _recorder(tmp_path)
     assert cli.main(["run", "--agent", "kevin"] + cmd) == 0
     assert not out.exists()
+
+
+# ---------------------------------------------------------------- task kinds and records
+def test_done_requires_a_kind_from_the_flow(env, capsys):
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--learned", "none"]) == 2
+    err = capsys.readouterr().err
+    assert "--kind" in err and "article" in err
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--learned", "none",
+                     "--kind", "poem"]) == 2
+    assert "unknown kind 'poem'" in capsys.readouterr().err
+
+
+def test_kind_is_written_in_the_status(env):
+    _, board = env
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--learned", "none",
+                     "--kind", "post"]) == 0
+    st = [c for c in board.item("acme/mkt#1").comments if c.status][0]
+    assert "kind=post" in st.body
+
+
+def test_poll_appends_closed_tasks_to_the_task_log_then_report_reads_it(env, capsys):
+    home, board = env
+    assert cli.main(["poll", "--agent", "kevin"]) == 0
+    assert cli.main(["status", "acme/mkt#1", "--agent", "kevin", "--state", "done", "--learned", "none",
+                     "--kind", "post"]) == 0
+    assert cli.main(["poll", "--agent", "kevin"]) == 0
+    capsys.readouterr()
+    lines = (home / "state" / "tasks-kevin.jsonl").read_text().splitlines()
+    assert len(lines) == 1 and json.loads(lines[0])["kind"] == "post"
+    assert "finished" not in _state(home)
+    assert cli.main(["report", "--by", "agent,kind"]) == 0
+    assert "kevin · post · 1 task (1 done)" in capsys.readouterr().out
+    assert cli.main(["report", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["ref"] == "acme/mkt#1"

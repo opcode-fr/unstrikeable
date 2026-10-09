@@ -59,12 +59,13 @@ def _context(co: Company, agent: str) -> list[str]:
     return lines
 
 
-def _footer(ref: str, agent: str) -> list[str]:
+def _footer(ref: str, agent: str, kinds: list[str] | None = None) -> list[str]:
+    kind = "--kind <%s> " % "|".join(kinds) if kinds else ""
     return ["", "Learned something reusable? `uns remember --agent %s --title \"…\" --body-file <md>` "
                 "(add `--share` to propose it to the team). Never a secret." % agent,
             "Start with `uns status %s --agent %s --state working --todo \"…\"`, and ALWAYS finish with "
-            "`--state done --learned \"<rule> because <reason>\"` (or `--learned none`), or `--state blocked`."
-            % (ref, agent)]
+            "`--state done %s--learned \"<rule> because <reason>\"` (or `--learned none`), or `--state blocked`."
+            % (ref, agent, kind)]
 
 
 def render(co: Company, dept: Department, ev: Event | None, item: Item, agent: str,
@@ -95,7 +96,7 @@ def render(co: Company, dept: Department, ev: Event | None, item: Item, agent: s
     text = (_read(co.root / playbook) or _read(SHIPPED / playbook)) if playbook else ""
     if text:
         lines += ["", "## Playbook (%s)" % pkey, text]
-    return "\n".join(lines + _footer(it.ref, agent))
+    return "\n".join(lines + _footer(it.ref, agent, dept.flow.kinds))
 
 
 def render_curation(co: Company, agent: str, files: list[str], note: str = "") -> str:
