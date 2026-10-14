@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import secrets
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable
@@ -81,20 +82,34 @@ def curation_due(root: Path, pending: list[str], inbox_max: int, max_age_h: floa
     return None
 
 
+# git does not read GH_TOKEN by itself: without this helper an App token in `env` is ignored and https
+# pull/push fail with "could not read Username" whenever the host has no credential helper of its own.
+# The token stays in the environment, never on the command line.
+TOKEN_HELPER = '!f() { test "$1" = get && echo username=x-access-token && echo "password=$GH_TOKEN"; }; f'
+
+
 def _git(root: Path, *args: str, env: dict | None = None) -> str:
-    p = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, env=env)
+    auth = ["-c", "credential.helper=", "-c", "credential.helper=" + TOKEN_HELPER] if (env or {}).get("GH_TOKEN") else []
+    p = subprocess.run(["git", *auth, *args], cwd=root, capture_output=True, text=True, env=env)
     if p.returncode != 0:
         raise RuntimeError("git %s: %s" % (" ".join(args[:2]), (p.stderr or p.stdout).strip()[:400]))
     return p.stdout
 
 
-def pull(root: Path) -> None:
-    """Best effort: keep the local clone of the config repo fresh (no-op outside a git repo)."""
-    if (Path(root) / ".git").exists():
-        try:
-            _git(Path(root), "pull", "-q", "--rebase", "--autostash")
-        except RuntimeError:
-            pass
+def pull(root: Path, env: dict | None = None) -> None:
+    """Best effort: keep the local clone of the config repo fresh (no-op outside a git repo), and push the memory
+    commits a failed `commit_and_push` left behind, so the clone does not drift from origin.
+    Never raises (a poll must not die on the network) but says why on stderr: a silent failure here means the
+    instance runs on a stale config.yml."""
+    root = Path(root)
+    if not (root / ".git").exists():
+        return
+    try:
+        _git(root, "pull", "-q", "--rebase", "--autostash", env=env)
+        if _git(root, "rev-list", "--count", "@{u}..HEAD").strip() not in ("", "0"):
+            _git(root, "push", "-q", env=env)
+    except RuntimeError as e:
+        print("uns: config repo %s not synced with origin: %s" % (root, e), file=sys.stderr)
 
 
 def commit_and_push(root: Path, paths: list[Path], message: str, retries: int = 2, env: dict | None = None) -> None:

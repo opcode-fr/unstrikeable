@@ -130,12 +130,13 @@ def next_event(agent: str, dry_run: bool = False, piped_usage: str | None = None
     if (home() / "PAUSE").exists():
         return ""
     local = load_local()
-    if local.get("config"):
-        pull(Path(os.path.expanduser(local["config"])))
     co = load(local)
     me = co.agents.get(agent)
     if me is None:
         raise UsageError("agent %r is not declared in config.yml" % agent)
+    if local.get("config"):
+        pull(Path(os.path.expanduser(local["config"])), env=_agent_env(co, agent))
+        co = load(local)                                                # the config the pull just brought
     if me.get("instance") and local.get("instance") and me["instance"] != local["instance"]:
         raise UsageError("agent %r is hosted on instance %r, not %r: refusing to poll" % (
             agent, me["instance"], local["instance"]))
@@ -394,16 +395,20 @@ def cmd_update(a: argparse.Namespace) -> None:
     print(admin.update(local, load(local).runtime))
 
 
+def _agent_env(co: Company, agent: str) -> dict | None:
+    """Environment for git on the config repo as the agent's App (None = the instance's own git auth)."""
+    owner = next((d.board.get("owner") for d in co.departments_of(agent)), "")
+    token = agent_token(agent, owner) if owner else None
+    return {**os.environ, "GH_TOKEN": token} if token else None
+
+
 def _remember(co: Company, agent: str, title: str, body: str, share: bool) -> Path:
     try:
         path = write_entry(co.root, agent, title, body, share=share)
     except ValueError as e:
         raise UsageError(str(e)) from e
     if (co.root / ".git").exists():
-        owner = next((d.board.get("owner") for d in co.departments_of(agent)), "")
-        token = agent_token(agent, owner) if owner else None
-        env = {**os.environ, "GH_TOKEN": token} if token else None     # push as the agent's App
-        commit_and_push(co.root, [path], "memory(%s): %s" % (agent, title), env=env)
+        commit_and_push(co.root, [path], "memory(%s): %s" % (agent, title), env=_agent_env(co, agent))
     return path
 
 
@@ -442,9 +447,7 @@ def cmd_memory_publish(a: argparse.Namespace) -> None:
     summary = Path(a.summary_file).read_text() if a.summary_file else (a.summary or "")
     if not summary.strip():
         raise UsageError("say what was kept, merged, dropped and rejected (--summary or --summary-file)")
-    owner = next((d.board.get("owner") for d in co.departments_of(a.agent)), "")
-    token = agent_token(a.agent, owner) if owner else None
-    env = {**os.environ, "GH_TOKEN": token} if token else None             # push and PR as the agent's App
+    env = _agent_env(co, a.agent)                                         # push and PR as the agent's App
 
     def gh(args: list[str]) -> str:
         p = subprocess.run(["gh", *args], cwd=co.root, env=env, capture_output=True, text=True)

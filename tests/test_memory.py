@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from unstrikeable.memory import commit_and_push, curation_due, read_memory, slugify, write_entry
+from unstrikeable.memory import _git, commit_and_push, curation_due, pull, read_memory, slugify, write_entry
 
 T0 = 1_791_000_000          # 2026-10-03
 
@@ -106,3 +106,46 @@ def test_commit_refuses_paths_outside_memory(clones):
     a, _ = clones
     with pytest.raises(ValueError, match="outside memory/"):
         commit_and_push(a, [a / "config.yml"], "nope")
+
+
+def test_pull_pushes_memory_left_behind_by_a_failed_push(clones):
+    a, b = clones
+    pa = write_entry(a, "kevin", "stuck", "a", share=True, now=T0)
+    git(a, "add", "-A")
+    git(a, "commit", "-qm", "memory: kevin")             # what a commit_and_push whose push failed leaves behind
+    pull(a)
+    git(b, "pull", "-q", "--rebase", "origin", "main")
+    assert (b / pa.relative_to(a)).exists()
+
+
+def test_pull_brings_config_changes_under_local_memory_commits(clones):
+    a, b = clones
+    write_entry(a, "kevin", "local", "a", share=True, now=T0)
+    git(a, "add", "-A")
+    git(a, "commit", "-qm", "memory: kevin")
+    (b / "config.yml").write_text("agents: {}\nlimits: {max_review_rounds: 6}\n")
+    git(b, "commit", "-qam", "limits")
+    git(b, "push", "-q", "origin", "main")                # diverged: a is ahead 1, behind 1
+    pull(a)
+    assert "max_review_rounds: 6" in (a / "config.yml").read_text()
+    assert git(a, "rev-list", "--count", "@{u}...HEAD").strip() == "0"
+
+
+def test_pull_reports_why_it_could_not_sync(clones, capsys):
+    a, _ = clones
+    git(a, "remote", "set-url", "origin", str(a.parent / "gone.git"))
+    pull(a)                                              # never raises: a poll must not die on the network
+    assert "not synced with origin" in capsys.readouterr().err
+
+
+def test_git_hands_the_app_token_to_git_through_a_helper(tmp_path, monkeypatch):
+    seen = {}
+
+    def run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(subprocess, "run", run)
+    _git(tmp_path, "push", "-q", env={"GH_TOKEN": "t0ken"})
+    assert "credential.helper=" in seen["cmd"] and "t0ken" not in " ".join(seen["cmd"])
+    _git(tmp_path, "push", "-q")
+    assert seen["cmd"] == ["git", "push", "-q"]           # no token: the instance's own git auth, untouched
