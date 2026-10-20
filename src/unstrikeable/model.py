@@ -18,6 +18,12 @@ class Comment:
     status: bool = False           # status comment (heartbeat), never a conversation turn
     body: str = ""
     created: str = ""              # ISO 8601 UTC (sorts as text)
+    bot: bool = False              # written by an agent identity or a trusted bot: never a human's word
+
+    @property
+    def human(self) -> bool:
+        """A trusted human's conversation turn (a go, a signal), as opposed to an agent, a bot or a heartbeat."""
+        return self.trusted and self.agent is None and not self.bot and not self.status
 
 
 @dataclass(frozen=True)

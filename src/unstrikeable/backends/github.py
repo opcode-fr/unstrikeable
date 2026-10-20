@@ -92,7 +92,7 @@ def parse_comment(c: dict, bots: set[str], can_write: Callable[[str], bool] | No
     m = AGENT_RE.search(body) if trusted else None
     return Comment(int(c["databaseId"]), login or "?", trusted, agent=m.group(1) if m else None,
                    status=trusted and ("<!-- uns:status " in body or "<!-- gha:status " in body), body=body,
-                   created=c.get("createdAt") or "")
+                   created=c.get("createdAt") or "", bot=login in bots)
 
 
 def outsider_at(n: dict, bots: set[str], can_write: Callable[[str], bool] | None = None) -> str:

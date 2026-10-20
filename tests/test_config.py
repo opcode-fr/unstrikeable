@@ -246,3 +246,35 @@ def test_trusted_authors_are_humans_only(tmp_path, who):
     write(tmp_path, "config.yml", TRUSTING.replace("- brice", "- %s" % who))
     with pytest.raises(ConfigError, match="humans only"):
         load_company(tmp_path)
+
+
+# ---------------------------------------------------------------- trusted bots (non-agent Apps writing for humans)
+BOTS = "trusted_bots:\n  - Chat-Acme[bot]\n" + textwrap.dedent(MINIMAL)
+
+
+def test_trusted_bots_default_to_none(tmp_path):
+    write(tmp_path, "config.yml", MINIMAL)
+    assert load_company(tmp_path).trusted_bots == []
+
+
+def test_trusted_bots_are_read_lowercase_without_the_bot_suffix(tmp_path):
+    write(tmp_path, "config.yml", BOTS)
+    assert load_company(tmp_path).trusted_bots == ["chat-acme"]
+
+
+@pytest.mark.parametrize("raw", ["chat-acme", "[1]", "['']", "{a: b}"])
+def test_trusted_bots_must_be_a_list_of_logins(tmp_path, raw):
+    write(tmp_path, "config.yml", "trusted_bots: %s\n" % raw + textwrap.dedent(MINIMAL))
+    with pytest.raises(ConfigError, match="trusted_bots"):
+        load_company(tmp_path)
+
+
+def test_a_trusted_bot_cannot_be_a_trusted_author(tmp_path):
+    write(tmp_path, "config.yml", "trusted_bots:\n  - chat-acme\n" + textwrap.dedent(
+        TRUSTING.replace("- brice", "- chat-acme[bot]")))
+    with pytest.raises(ConfigError, match="humans only"):
+        load_company(tmp_path)
+    write(tmp_path, "config.yml", "trusted_bots:\n  - chat-acme\n" + textwrap.dedent(
+        TRUSTING.replace("- brice", "- chat-acme")))
+    with pytest.raises(ConfigError, match="humans only"):
+        load_company(tmp_path)

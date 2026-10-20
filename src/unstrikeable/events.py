@@ -97,7 +97,7 @@ def _last_word(item: Item, me: str, humans_only: bool) -> Comment | None:
     if not conv:
         return None
     c = conv[-1]
-    if c.agent == me or (humans_only and c.agent is not None):
+    if c.agent == me or (humans_only and not c.human):
         return None
     return c
 
@@ -107,7 +107,7 @@ def needs_vetting(item: Item) -> bool:
     answered yet: agents must not read it. A member's comment posted after it is the go."""
     if not item.outsider_at:
         return False
-    go = max((c.created for c in item.comments if c.trusted and c.agent is None and not c.status), default="")
+    go = max((c.created for c in item.comments if c.human), default="")
     return item.outsider_at > go
 
 
@@ -138,7 +138,7 @@ def events_for(agent: str, dept: Department, items: list[Item]) -> list[Event]:
             if not role.labelled and not _assignees(dept, it, rname):
                 if not it.author_trusted:
                     continue                              # outsider item, not vetted by a member
-                if it.author_agent and not any(c.trusted and c.agent is None and not c.status for c in it.comments):
+                if it.author_agent and not any(c.human for c in it.comments):
                     continue                              # created by an agent: waits for a human signal
 
             auto = role.named_label(agent) if trusted_take(role, dept, it) else None

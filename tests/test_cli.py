@@ -458,3 +458,17 @@ def test_memory_review_must_be_a_command_list():
         cli.reviewer("hermes -z")
     with pytest.raises(RuntimeError):
         cli.reviewer(["false"])("prompt")
+
+
+def test_bots_are_agent_identities_plus_trusted_bots(tmp_path):
+    from unstrikeable.config import load_company
+    (tmp_path / "config.yml").write_text(textwrap.dedent("""\
+        trusted_bots:
+          - chat-acme
+        departments: {}
+        agents:
+          kevin:
+            identity: Kevin-Acme
+          lea: {}
+    """))
+    assert cli.bots(load_company(tmp_path)) == {"kevin-acme", "chat-acme"}

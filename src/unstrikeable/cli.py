@@ -55,7 +55,8 @@ def load(local: dict) -> Company:
 
 
 def bots(co: Company) -> set[str]:
-    return {str(a.get("identity", "")).lower() for a in co.agents.values() if a.get("identity")}
+    """Logins trusted as machines: agent identities and `trusted_bots` (their words are never a human go)."""
+    return {str(a.get("identity", "")).lower() for a in co.agents.values() if a.get("identity")} | set(co.trusted_bots)
 
 
 # ---------------------------------------------------------------- GitHub App token

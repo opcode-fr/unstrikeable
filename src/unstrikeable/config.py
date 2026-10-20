@@ -129,6 +129,7 @@ class Company:
     forge: dict[str, Any] | None = None
     runtime: str = ""                                # version pin of the runtime
     memory: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_MEMORY))
+    trusted_bots: list[str] = field(default_factory=list)  # logins, lowercase, without "[bot]"
 
     def limits_for(self, agent: str) -> dict[str, Any]:
         """Company limits, overridden by `agents.<a>.limits` (budgets and cost quotas differ per agent)."""
@@ -196,7 +197,18 @@ def load_flow(name: str, overrides: dict | None = None, search: list[Path] | Non
                 _kinds(name, raw.get("kinds")), {str(k): str(v).lower().lstrip("#") for k, v in colors.items()})
 
 
-def _trusted_authors(dept: str, raw: Any, agents: dict, staff: dict) -> dict[str, str | None]:
+def _trusted_bots(raw: Any) -> list[str]:
+    """Apps that are not agents but write on the board for humans (e.g. a chat hub creating issues): trusted like an
+    agent identity, so their items and comments are not outside content, and like an agent's they are never a human
+    go. Type-checked: a YAML string would iterate as characters."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not all(isinstance(b, str) and b.strip() for b in raw):
+        raise ConfigError("trusted_bots must list GitHub App logins, got %r" % (raw,))
+    return [b.strip().lower().removesuffix("[bot]") for b in raw]
+
+
+def _trusted_authors(dept: str, raw: Any, agents: dict, staff: dict, bots: list[str] = ()) -> dict[str, str | None]:
     """Humans whose items are assigned without a label: a list of logins (first idle staff member takes them) or
     a mapping login -> agent of the staff (that agent takes them, waiting if busy). Humans only: an agent here
     would let an agent that read a booby-trapped issue hand work to another agent with no human in between."""
@@ -207,7 +219,7 @@ def _trusted_authors(dept: str, raw: Any, agents: dict, staff: dict) -> dict[str
     if not isinstance(raw, dict) or not all(isinstance(a, str) and a.strip() for a in raw):
         raise ConfigError("%s: trusted_authors must list GitHub logins (optionally login: agent)" % dept)
     machines = {str(n).lower() for n in agents} | {
-        str(a.get("identity", "")).lower() for a in agents.values() if isinstance(a, dict) and a.get("identity")}
+        str(a.get("identity", "")).lower() for a in agents.values() if isinstance(a, dict) and a.get("identity")} | set(bots)
     for login, agent in raw.items():
         bare = login.lower().replace("[bot]", "")
         if login.lower().endswith("[bot]") or bare in machines:
@@ -237,6 +249,7 @@ def load_company(root: Path | str) -> Company:
         raise ConfigError("config.yml not found in %s" % root)
     raw = _read_yaml(path)
     agents = raw.get("agents") or {}
+    trusted_bots = _trusted_bots(raw.get("trusted_bots"))
     depts = {}
     for name, d in (raw.get("departments") or {}).items():
         if not d.get("flow"):
@@ -250,6 +263,6 @@ def load_company(root: Path | str) -> Company:
                 if r not in flow.roles:
                     raise ConfigError("%s: %s has role %r, not in flow %s" % (name, a, r, flow.name))
         depts[name] = Department(name, flow, dict(d.get("board") or {}), list(d.get("repos") or []), staff,
-                                 _trusted_authors(name, d.get("trusted_authors"), agents, staff))
+                                 _trusted_authors(name, d.get("trusted_authors"), agents, staff, trusted_bots))
     return Company(root, depts, agents, {**DEFAULT_LIMITS, **(raw.get("limits") or {})}, raw.get("forge"),
-                   str(raw.get("runtime") or ""), {**DEFAULT_MEMORY, **(raw.get("memory") or {})})
+                   str(raw.get("runtime") or ""), {**DEFAULT_MEMORY, **(raw.get("memory") or {})}, trusted_bots)
