@@ -14,6 +14,8 @@ DEPARTMENT = {"dev": "rnd", "content": "marketing"}
 CONFIG = """\
 # Company config for unstrikeable: https://github.com/opcode-fr/unstrikeable/blob/main/docs/design.md
 runtime: "{runtime}"            # versions of `uns` this config is written for (`uns check` compares)
+# trusted_bots:                 # optional: Apps (not agents) writing on the board for humans, e.g. a chat hub
+#   - chat-{org}                # trusted like an agent: no vetting, but never a human go
 
 departments:
   {department}:                 # a department = one board worked through one flow

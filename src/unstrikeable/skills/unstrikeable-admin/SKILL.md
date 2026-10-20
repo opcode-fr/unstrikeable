@@ -106,6 +106,9 @@ their own agent installs the instance and stops at the human gates.
 - Vetting gate: items with content from a non-member get `needs:vetting`; a member reads it and **comments** to
   give the go (removing the label by hand does not work: the next poll sets it again). Run `uns layout --apply`
   once after upgrading so the label exists with its colour.
+- `trusted_bots` (top of `config.yml`): App logins that write on the board for humans (e.g. a chat hub creating
+  issues). Trusted like an agent identity: no `needs:vetting`, but their items wait for a human comment or label
+  and their comments are never a go. List only Apps the company controls; never a human login.
 
 ## Pitfalls
 
