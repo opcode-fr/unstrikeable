@@ -96,3 +96,8 @@ def test_ci_bot_comment_on_our_agents_pr_is_not_outside_content():
     it = parse_issue(n, "Ready", FLOW, REAL_BOTS)
     assert it.outsider_at == "" and not needs_vetting(it)
     assert not any(c.trusted for c in it.comments if c.author == "github-actions")   # still not a human go
+
+
+def test_a_trusted_bot_comment_is_not_a_go():
+    bot = Comment(5, "chat-acme", True, bot=True, created="2026-10-09T11:00:00Z")
+    assert needs_vetting(item("2026-10-09T10:00:00Z", [bot]))

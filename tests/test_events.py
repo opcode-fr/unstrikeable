@@ -271,3 +271,29 @@ def test_a_routed_item_waits_for_its_busy_agent():
 def test_routing_never_makes_an_agent_dev_of_an_item_it_reviews():
     d = trusting({"jerome": "jeanmichel"})
     assert kinds("jeanmichel", [by("jerome", labels=["review:jeanmichel"])], d) == []
+
+
+# ---------------------------------------------------------------- trusted bots (non-agent Apps)
+def bot_says(i):
+    return Comment(i, "chat-acme", True, bot=True, body="relayed from chat")
+
+
+def test_item_created_by_a_trusted_bot_waits_for_a_human_signal():
+    it = Item("acme/app", 7, "t", "backlog", author="chat-acme", author_trusted=True,
+              author_agent="chat-acme")
+    assert kinds("gerard", [it]) == []
+    assert kinds("gerard", [Item("acme/app", 7, "t", "backlog", author="chat-acme", author_trusted=True,
+                                 author_agent="chat-acme", comments=[bot_says(1)])]) == []
+    assert kinds("gerard", [Item("acme/app", 7, "t", "backlog", author="chat-acme", author_trusted=True,
+                                 author_agent="chat-acme", comments=[human(1)])]) == [("pm", "item_new")]
+
+
+def test_trusted_bot_item_is_never_taken_as_a_trusted_author_item():
+    d = trusting(["chat-acme"])
+    it = by("chat-acme", agent="chat-acme")
+    assert kinds("gerard", [it], d) == []
+
+
+def test_a_trusted_bot_comment_does_not_reopen_approved_work():
+    it = item("approved", ["dev:jeanmichel"], [human(1), agent_says(2, "jeanmichel"), bot_says(3)])
+    assert kinds("jeanmichel", [it]) == []

@@ -206,3 +206,30 @@ def test_set_field_picks_the_option_by_name():
 def test_issue_author_login_is_kept_for_trusted_authors():
     assert parse_issue(node(author={"login": "Brice"}), "Ready", FLOW, BOTS).author == "brice"
     assert parse_issue(node(), "Ready", FLOW, BOTS).author == ""
+
+
+# ---------------------------------------------------------------- trusted bots (e.g. a chat app writing for humans)
+APP = {"login": "chat-acme[bot]"}
+
+
+def test_issue_written_by_a_trusted_bot_is_trusted_but_counts_as_an_agent_item():
+    n = node(author=APP, authorAssociation="NONE", comments={"nodes": []}, closedByPullRequestsReferences=None)
+    it = parse_issue(n, "Backlog", FLOW, BOTS | {"chat-acme"})
+    assert (it.author, it.author_trusted, it.author_agent, it.outsider_at) == (
+        "chat-acme", True, "chat-acme", "")
+
+
+def test_same_issue_without_trusted_bots_is_outside_content():
+    n = node(author=APP, authorAssociation="NONE", createdAt="2026-10-20T10:00:00Z", comments={"nodes": []},
+             closedByPullRequestsReferences=None)
+    it = parse_issue(n, "Backlog", FLOW, BOTS)
+    assert (it.author_trusted, it.author_agent, it.outsider_at) == (False, None, "2026-10-20T10:00:00Z")
+
+
+def test_comment_of_a_bot_without_agent_marker_is_trusted_but_not_human():
+    n = node(comments={"nodes": [{"databaseId": 9, "author": APP, "authorAssociation": "NONE", "body": "from chat"},
+                                 {"databaseId": 10, "author": {"login": "jeanmichel-acme"},
+                                  "authorAssociation": "NONE", "body": "no marker"}]})
+    cs = parse_issue(n, "Ready", FLOW, BOTS | {"chat-acme"}).comments
+    assert [(c.trusted, c.agent, c.bot) for c in cs] == [(True, None, True), (True, None, True)]
+    assert not parse_issue(node(), "Ready", FLOW, BOTS).comments[0].bot     # brice, a member
