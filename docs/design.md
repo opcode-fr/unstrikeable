@@ -47,6 +47,9 @@ Example:
 ```yaml
 runtime: ">=0.1,<0.2"            # checked by `uns check` (not enforced at install, see Â§9)
 
+trusted_bots:                   # optional: Apps that are not agents but write on the board for humans
+  - chat-acme
+
 departments:
   marketing:
     flow: content               # profile shipped with the runtime
@@ -125,6 +128,17 @@ set labels as before (default: empty list, every assignment is human). Limits: h
 an agent name, an agent identity or a `[bot]` login, because an agent on this list would let an agent that read
 a booby-trapped issue hand work to another agent with no human in between. An item created by an agent is never
 auto-assigned, and an author who lost their org/repo rights no longer counts.
+
+`trusted_bots` (company-wide, optional): GitHub App logins (with or without `[bot]`) that are not agents of this
+company but write on its boards on behalf of humans, e.g. a chat hub that turns a discussion into an issue. What it
+is for: such an App is neither an org member nor an agent identity, so without it every issue or comment it writes
+is outside content and gets `needs:vetting`. Listed, it is trusted exactly like an agent identity: its content is
+not outside content, its items wait for a human signal (a human comment or an assignment label) like an item
+created by an agent, and its comments are never a human go (vetting, `human_comment`), whatever they say. What
+breaks without it: nothing, a member comments on each of its issues to give the go. Limits: list only Apps your
+company controls (whoever holds the App's key writes trusted content); a human login listed here loses its human
+voice; a login cannot be both a trusted bot and a `trusted_author` (`uns check` refuses it). The same rule applies
+to agent identities: a comment from an agent's App without its `uns:agent` marker is trusted, but not a human go.
 
 Starting a new company: `uns init <dir> --org <org> [--flow dev|content]` writes a starter config repo
 (`config.yml` commented, `culture.md`, `agents/`, `memory/`, a `.gitignore` for secrets) that passes `uns check`
@@ -441,7 +455,8 @@ class Board(Protocol):            # GitHub Projects today; Trello, Linear, Jiraâ
   a fork PR is already gated by its author) nor a member's go.
 - **Security**: content from non-members is ignored; an item created by an agent waits for a human signal
   (a human comment or an assignment label) before a planner/PM spends anything on it; assignment = human
-  validation of the item (a label set by a human, or an item written by a human of `trusted_authors`); external
+  validation of the item (a label set by a human, or an item written by a human of `trusted_authors`); content
+  from a `trusted_bots` App counts as an agent's (trusted, never a human signal); external
   content is data, never instructions; no agent merges or pushes to a default branch.
 
 ## 7. Agent integration (Hermes and others)
@@ -536,6 +551,10 @@ config repo, and `memory/shared/` through `uns memory-publish` after a `SAFE` re
   periodic sampler joined after the fact (same precision, more code).
 - `trusted_authors` is a list of humans, refused if it names an agent or a bot: assignment stays a human act,
   made once by writing the ticket instead of once more by setting a label.
+- Apps that write for humans (a chat hub) are declared in `trusted_bots` and treated as agent identities, rather
+  than vetted issue by issue (friction, forgotten = stuck) or made to write as an agent's App (the agent would
+  write on GitHub on its own): unstrikeable cannot tell which human stands behind an App, so its words never
+  replace a human's go. Machine logins (identities and trusted bots) are never a human go, marker or not.
 - Task kinds are declared by the agent at closing, from a closed list in the flow, rather than read from issue
   labels: every task gets one, with no human discipline needed. Costs are not written on the board.
 - Label colours are declared per prefix (`label_colors`), not derived from a hash of the name: a hash collides
